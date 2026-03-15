@@ -137,10 +137,10 @@ class CustomAPIManager(Star):
         key_len = len(key_list)
         return key_list, key_len
 
-    def _get_params_empty_len(self, params: list) -> Any:
-        # 返回参数列表空值数量
+    def _get_params_empty(self, params: dict) -> Any:
+        # 返回参数列表空值
         if not params:
-            return 0
+            return [], 0
         empty_keys = [k for k, v in params.items() if v == ""]
         empty_keys_len = len(empty_keys)
         return empty_keys, empty_keys_len
@@ -150,16 +150,19 @@ class CustomAPIManager(Star):
         按顺序填充URL中的占位符
         """
         # 找到所有占位符
-        parts = url.split("{")
-        result = parts[0]
+        try:
+            parts = url.split("{")
+            result = parts[0]
 
-        for i in range(1, len(parts)):
-            key_part, rest = parts[i].split("}", 1)
-            if i - 1 < len(args_list):
-                result += str(args_list[i - 1]) + rest
-            else:
-                result += "{" + key_part + "}" + rest
-        return result
+            for i in range(1, len(parts)):
+                key_part, rest = parts[i].split("}", 1)
+                if i - 1 < len(args_list):
+                    result += str(args_list[i - 1]) + rest
+                else:
+                    result += "{" + key_part + "}" + rest
+            return result
+        except Exception as e:
+            logger.error(f"❌ 在处理url占位符时发生错误: {str(e)}")
 
     def _replace_params(self, args_list: list, params: dict) -> Any:
         """
@@ -170,12 +173,13 @@ class CustomAPIManager(Star):
             params[key] = value
         return params
 
-    def _should_trigger(self, event: AstrMessageEvent, api_config: dict) -> Any:
+    def _should_trigger(self, event: AstrMessageEvent, selected_api: dict) -> Any:
         """
         判断是否应该触发API
         1. 单个API配置优先
         2. 没有则使用全局配置
         """
+        api_config = selected_api.get("config", {})
         api_trigger_type = api_config.get("trigger_type", "global")
         if api_trigger_type == "global":
             trigger_type = self.config.get("default_trigger_type", "direct")
@@ -189,6 +193,91 @@ class CustomAPIManager(Star):
             return is_mentioned
         # 直接触发
         return True
+
+    def _is_rate_limit(self, event: AstrMessageEvent, selected_api: dict) -> bool:
+        """
+        返回True代表达到速率限制
+        """
+        user_id = event.get_sender_id()
+        api_config = selected_api.get("config", {})
+        command = api_config.get("api_name", "")
+        api_type = selected_api.get("type", "")
+        api_key = f"{command}_{api_type}"
+        rate_limit = api_config.get("rate_limit", 0)
+        if rate_limit == 0:
+            rate_limit = self.config.get("global_rate_limit", 0)
+
+        if self.rate_limiter.is_allowed(user_id, api_key, rate_limit):
+            return False
+        else:
+            return True
+
+    def _params_handle(self, event: AstrMessageEvent, parts: list, selected_api: dict):
+        """
+        根据输入参数对url或params进行处理
+        """
+        # 对params参数操作，copy一份，避免影响原来的配置
+        api_config = copy.deepcopy(selected_api["config"])
+        command = api_config.get("api_name", "")
+        params = api_config.get("params", "")
+        # 从url列表中随机选择一个
+        api_url_list = api_config.get("api_url", [])
+        if not isinstance(api_url_list, list):
+            api_url = api_url_list
+        else:
+            if not api_url_list:
+                err_msg = f"❌ 未配置 API 地址"
+                return err_msg, api_config
+                # raise Exception(f"❌ 未配置 API 地址")
+            api_url = random.choice(api_url_list)
+        api_config["api_url"] = api_url
+
+        if len(parts) > 1:
+            args_list = parts[1:]
+            args_len = len(args_list)
+        else:
+            args_list = []
+            args_len = 0
+        # url有占位符情况
+        if self._if_url_has_placeholders(url=api_url):
+            key_list, key_len = self._get_placeholders(url=api_url)
+            if args_len != key_len:
+                param_placeholders = f"/{command} " + " ".join(
+                    [f"{{{p}}}" for p in key_list]
+                )
+                err_msg = f"❌ 参数数量不匹配，url占位符需要{key_len}个值，实际传递了{args_len}个，用法：{param_placeholders}"
+                return err_msg, api_config
+                # raise Exception(
+                #     f"❌ 参数数量不匹配，url占位符需要{key_len}个值，实际传递了{args_len}个，用法：{param_placeholders}"
+                # )
+            else:
+                api_config["api_url"] = self._replace_url_params(
+                    url=api_url, args_list=args_list
+                )
+                return None, api_config
+        # params有空值情况
+        elif self._get_params_empty(api_config.get("params", "")) != 0:
+            key_list, key_len = self._get_params_empty(api_config.get("params", ""))
+            if args_len != key_len:
+                param_placeholders = f"/{command} " + " ".join(
+                    [f"{{{p}}}" for p in key_list]
+                )
+                err_msg = f"❌ 参数数量不匹配，params需要{key_len}个参数值，实际传递了{args_len}个，用法：{param_placeholders}"
+                return err_msg, api_config
+                # raise Exception(
+                #     f"❌ 参数数量不匹配，params需要{key_len}个参数值，实际传递了{args_len}个，用法：{param_placeholders}"
+                # )
+            else:
+                api_config["params"] = self._replace_params(
+                    params=params, args_list=args_list
+                )
+                return None, api_config
+        elif args_len != 0:
+            err_msg = f"❌ 该API请求无需额外参数"
+            return err_msg, api_config
+            # raise Exception(f"❌ 该API请求无需额外参数")
+        else:
+            return None, api_config
 
     def _detect_media_type(self, content_type: str, url: str = "") -> str:
         """
@@ -338,7 +427,7 @@ class CustomAPIManager(Star):
                 if img_content.startswith(("http://", "https://")):
                     yield event.image_result(img_content)
                     return
-                # json中有base64
+                # json中有base64 str
                 try:
                     if "base64," in img_content:
                         img_content = img_content.split(",")[1]
@@ -356,7 +445,9 @@ class CustomAPIManager(Star):
                 yield event.image_result(f.name)
                 os.unlink(f.name)
                 return
-
+                # b64_str = base64.b64encode(data).decode("utf-8")
+                # yield event.image_result(f"base64://{b64_str}")
+                # return
             # 3. 纯字符串 Base64
             elif isinstance(data, str):
                 try:
@@ -395,8 +486,6 @@ class CustomAPIManager(Star):
             else:
                 # 处理音频二进制数据
                 # 保存音频到临时文件
-                import tempfile
-                import os
 
                 with tempfile.NamedTemporaryFile(
                     delete=False, suffix=".mp3"
@@ -434,8 +523,6 @@ class CustomAPIManager(Star):
             else:
                 # 处理视频二进制数据
                 # 保存视频到临时文件
-                import tempfile
-                import os
 
                 with tempfile.NamedTemporaryFile(
                     delete=False, suffix=".mp4"
@@ -458,14 +545,14 @@ class CustomAPIManager(Star):
     async def api_help(self, event: AstrMessageEvent):
         """显示API帮助信息"""
         help_text = """自定义API管理插件帮助
-                    📋 可用指令：
-                    • /apihelp 或 /api帮助- 显示此帮助信息
-                    • /apilist 或 /api列表 - 显示所有可用的API指令
+        📋 可用指令：
+        • /apihelp 或 /api帮助- 显示此帮助信息
+        • /apilist 或 /api列表 - 显示所有可用的API指令
 
-                    🔧 使用方法：
-                    直接输入配置的触发指令即可调用对应的API。
-                    如果一个指令配置了多个API或多个url，系统会随机选择一个调用。
-                    """
+        🔧 使用方法：
+        直接输入配置的触发指令即可调用对应的API。
+        如果一个指令配置了多个API或多个url，系统会随机选择一个调用。
+        """
         yield event.plain_result(help_text)
 
     @filter.command("apilist", alias={"api列表", "APILIST"})
@@ -488,7 +575,7 @@ class CustomAPIManager(Star):
     @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("api配置")
     async def api_conf(self, event: AstrMessageEvent):
-        yield event.plain_result(str(self.config))
+        yield event.plain_result(str(self.api_map))
 
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def handle_all_messages(self, event: AstrMessageEvent):
@@ -500,77 +587,40 @@ class CustomAPIManager(Star):
         if not parts:
             return
 
-        # 2. 拆分指令 + 参数列表
+        # 指令匹配检测
         command = parts[0].lower()
         if command not in self.api_map:
             return
 
         # 检查是否匹配API指令
         # 随机选择一个API
-        api_list = self.api_map[command]
-        selected_api = random.choice(api_list)
-
-        api_type = selected_api["type"]
-        # 对params参数操作，copy一份，避免影响原来的配置
-        api_config = copy.deepcopy(selected_api["config"])
-        # 从url列表中随机选择一个
-        api_url_list = api_config.get("api_url", "")
-        api_url = random.choice(api_url_list)
-        api_config["api_url"] = api_url
-        params = api_config.get("params", "")
-
-        if not self._should_trigger(event, api_config):
-            return
-
-        # 参数替换，将用户传递的参数替换到url或者params中
-        if len(parts) > 1:
-            args_list = parts[1:]
-            args_len = len(args_list)
+        api_list = self.api_map.get(command, [])
+        if not isinstance(api_list, list):
+            selected_api = api_list
         else:
-            args_len = 0
-        if self._if_url_has_placeholders(url=api_url):
-            key_list, key_len = self._get_placeholders(url=api_url)
-            # yield event.plain_result(f"keylen={str(key_len)}")
-            if args_len != key_len:
-                param_placeholders = f"/{command} " + " ".join(
-                    [f"{{{p}}}" for p in key_list]
-                )
-                yield event.plain_result(
-                    f"❌ 参数数量不匹配，需要{key_len}个，实际传递了{args_len}个，用法：{param_placeholders}"
-                )
+            if not api_list:
+                yield event.plain_result("❌ 未配置 API 地址")
                 return
-            else:
-                api_config["api_url"] = self._replace_url_params(
-                    url=api_url, args_list=args_list
-                )
-        elif self._get_params_empty_len(api_config.get("params", "")) != 0:
-            key_list, key_len = self._get_params_empty_len(api_config.get("params", ""))
-            # yield event.plain_result(f"paramslen={str(key_len)}")
-            if args_len != key_len:
-                param_placeholders = f"/{command} " + " ".join(
-                    [f"{{{p}}}" for p in key_list]
-                )
-                yield event.plain_result(
-                    f"❌ 参数数量不匹配，需要{key_len}个，实际传递了{args_len}个，用法：{param_placeholders}"
-                )
-                return
-            else:
-                api_config["params"] = self._replace_params(
-                    params=params, args_list=args_list
-                )
-        elif args_len != 0:
-            event.plain_result(f"❌ 该API请求无需额外参数")
+            selected_api = random.choice(api_list)
+        api_type = selected_api["type"]
+
+        # 触发条件检测
+        if not self._should_trigger(event=event, selected_api=selected_api):
             return
-
-        # 检查频率限制
-        user_id = event.get_sender_id()
-        api_key = f"{command}_{api_type}"
-        rate_limit = api_config.get("rate_limit", 0)
-        if rate_limit == 0:
-            rate_limit = self.config.get("global_rate_limit", 0)
-
-        if not self.rate_limiter.is_allowed(user_id, api_key, rate_limit):
+        # 速率检测
+        if self._is_rate_limit(event=event, selected_api=selected_api):
             yield event.plain_result("⚠️ 调用过于频繁，请稍后再试")
+            event.stop_event()
+            return
+        # 参数处理
+        err_msg, api_config = self._params_handle(
+            event=event, parts=parts, selected_api=selected_api
+        )
+        if err_msg:
+            yield event.plain_result(err_msg)
+            event.stop_event()
+            return
+        if not api_config:
             event.stop_event()
             return
 
