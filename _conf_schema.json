@@ -1,0 +1,403 @@
+{
+  "global_rate_limit": {
+    "description": "全局API调用频率限制（次/分钟）",
+    "type": "int",
+    "hint": "单用户/单群每分钟最多调用所有API的总次数，0表示不限",
+    "default": 60
+  },
+  "global_default_timeout": {
+    "description": "全局默认API请求超时时间（秒）",
+    "type": "int",
+    "hint": "单个API未配置超时时间时，使用此全局值，建议10-30秒",
+    "default": 15
+  },
+  "default_trigger_type": {
+    "description": "默认触发方式",
+    "type": "string",
+    "options": [
+      "direct",
+      "mention_only"
+    ],
+    "labels": [
+      "直接对话触发",
+      "仅@机器人时触发"
+    ],
+    "default": "mention_only",
+    "hint": "全局API的默认触发方式"
+  },
+  "custom_apis": {
+    "description": "自定义API列表",
+    "type": "template_list",
+    "hint": "自定义API管理，可添加多个API，支持GET/POST，返回类型为文本/图片/语音/视频",
+    "templates": {
+      "text_type": {
+        "name": "文本类型API",
+        "hint": "返回值为纯文本的API",
+        "items": {
+          "api_name": {
+            "description": "触发命令",
+            "type": "string",
+            "hint": "用于指令调用，不可重复、不含特殊字符，如weather、voice_api、video_api",
+            "default": "default_api"
+          },
+          "api_url": {
+            "description": "API请求地址",
+            "type": "list",
+            "hint": "支持http/https，如https://api.example.com",
+            "default": ""
+          },
+          "method": {
+            "description": "请求方式",
+            "type": "string",
+            "hint": "仅支持GET/POST",
+            "options": [
+              "GET",
+              "POST"
+            ],
+            "default": "GET"
+          },
+          "timeout": {
+            "description": "当前API请求超时时间（秒）",
+            "type": "int",
+            "hint": "优先级高于全局默认超时，建议10-30秒，避免过短导致请求失败",
+            "default": 0
+          },
+          "api_rate_limit": {
+            "description": "当前API单独调用频率限制（次/分钟）",
+            "type": "int",
+            "hint": "优先级高于全局频率限制，0表示继承全局限制",
+            "default": 0
+          },
+          "trigger_type": {
+            "description": "触发方式",
+            "type": "string",
+            "options": [
+              "global",
+              "direct",
+              "mention_only"
+            ],
+            "labels": [
+              "使用全局设置",
+              "直接对话触发",
+              "仅@机器人时触发"
+            ],
+            "default": "global",
+            "hint": "单独设置此API的触发方式"
+          },
+          "params": {
+            "description": "API请求参数列表",
+            "type": "dict",
+            "hint": "配置当前API所需的请求参数，格式为键值对，不需要请留空",
+            "default": {}
+          },
+          "headers": {
+            "description": "API请求头",
+            "type": "dict",
+            "hint": "配置当前API所需的请求headers，不需要请留空”",
+            "default": {}
+          },
+          "body": {
+            "description": "API请求body",
+            "type": "dict",
+            "hint": "仅POST请求时配置当前API所需的body，不需要请留空”",
+            "default": {}
+          },
+          "data_path": {
+            "description": "返回值解析路径",
+            "type": "string",
+            "hint": "如果返回值是json，且你仅需要提取某一部分，可以在此配置，支持多级嵌套，例如“key1.key2”,不需要请留空”",
+            "default": ""
+          },
+          "auto_fold": {
+            "description": "是否自动折叠长文本",
+            "type": "bool",
+            "hint": "true：超过500字自动折叠，需指令展开；false：全部展示",
+            "default": true
+          },
+          "max_length": {
+            "description": "文本最大展示长度",
+            "type": "int",
+            "hint": "超过此长度的文本会被截断，0表示不限制",
+            "default": 2000
+          }
+        }
+      },
+      "img_type": {
+        "name": "图片类型API",
+        "hint": "返回值为图片直链，或者返回json包含img_url关键字的API",
+        "items": {
+          "api_name": {
+            "description": "触发命令",
+            "type": "string",
+            "hint": "用于指令调用，不可重复、不含特殊字符，如weather、voice_api、video_api",
+            "default": "default_api"
+          },
+          "api_url": {
+            "description": "API请求地址",
+            "type": "list",
+            "hint": "支持http/https，如https://api.example.com/weather、https://api.example.com/voice",
+            "default": ""
+          },
+          "method": {
+            "description": "请求方式",
+            "type": "string",
+            "hint": "仅支持GET/POST",
+            "options": [
+              "GET",
+              "POST"
+            ],
+            "default": "GET"
+          },
+          "timeout": {
+            "description": "当前API请求超时时间（秒）",
+            "type": "int",
+            "hint": "优先级高于全局默认超时，建议10-30秒，避免过短导致请求失败",
+            "default": 0
+          },
+          "api_rate_limit": {
+            "description": "当前API单独调用频率限制（次/分钟）",
+            "type": "int",
+            "hint": "优先级高于全局频率限制，0表示继承全局限制",
+            "default": 0
+          },
+          "trigger_type": {
+            "description": "触发方式",
+            "type": "string",
+            "options": [
+              "global",
+              "direct",
+              "mention_only"
+            ],
+            "labels": [
+              "使用全局设置",
+              "直接对话触发",
+              "仅@机器人时触发"
+            ],
+            "default": "global",
+            "hint": "单独设置此API的触发方式"
+          },
+          "params": {
+            "description": "API请求参数列表",
+            "type": "dict",
+            "hint": "配置当前API所需的请求参数，格式为键值对，不需要请留空",
+            "default": {}
+          },
+          "headers": {
+            "description": "API请求头",
+            "type": "dict",
+            "hint": "配置当前API所需的请求headers，不需要请留空”",
+            "default": {}
+          },
+          "body": {
+            "description": "API请求body",
+            "type": "dict",
+            "hint": "仅POST请求时配置当前API所需的body，不需要请留空”",
+            "default": {}
+          },
+          "data_path": {
+            "description": "返回值解析路径",
+            "type": "string",
+            "hint": "如果返回值是json，且你仅需要提取某一部分，可以在此配置，支持多级嵌套，例如“key1.key2”,不需要请留空”",
+            "default": ""
+          },
+          "auto_preview": {
+            "description": "是否自动预览图片",
+            "type": "bool",
+            "hint": "true：直接发送图片；false：发送图片URL",
+            "default": true
+          },
+          "max_size": {
+            "description": "图片最大允许大小（MB）",
+            "type": "int",
+            "hint": "超过此大小的图片仅返回URL，0表示不限制",
+            "default": 0
+          }
+        }
+      },
+      "audio_type": {
+        "name": "语音类型API",
+        "hint": "返回值为语音的API，例如tts",
+        "items": {
+          "api_name": {
+            "description": "触发命令",
+            "type": "string",
+            "hint": "用于指令调用，不可重复、不含特殊字符，如weather、voice_api、video_api",
+            "default": "default_api"
+          },
+          "api_url": {
+            "description": "API请求地址",
+            "type": "list",
+            "hint": "支持http/https，如https://api.example.com/weather、https://api.example.com/voice",
+            "default": ""
+          },
+          "method": {
+            "description": "请求方式",
+            "type": "string",
+            "hint": "仅支持GET/POST",
+            "options": [
+              "GET",
+              "POST"
+            ],
+            "default": "GET"
+          },
+          "timeout": {
+            "description": "当前API请求超时时间（秒）",
+            "type": "int",
+            "hint": "优先级高于全局默认超时，建议10-30秒，避免过短导致请求失败",
+            "default": 0
+          },
+          "api_rate_limit": {
+            "description": "当前API单独调用频率限制（次/分钟）",
+            "type": "int",
+            "hint": "优先级高于全局频率限制，0表示继承全局限制",
+            "default": 0
+          },
+          "trigger_type": {
+            "description": "触发方式",
+            "type": "string",
+            "options": [
+              "global",
+              "direct",
+              "mention_only"
+            ],
+            "labels": [
+              "使用全局设置",
+              "直接对话触发",
+              "仅@机器人时触发"
+            ],
+            "default": "global",
+            "hint": "单独设置此API的触发方式"
+          },
+          "params": {
+            "description": "API请求参数列表",
+            "type": "dict",
+            "hint": "配置当前API所需的请求参数，格式为键值对，不需要请留空",
+            "default": {}
+          },
+          "headers": {
+            "description": "API请求头",
+            "type": "dict",
+            "hint": "配置当前API所需的请求headers，不需要请留空”",
+            "default": {}
+          },
+          "body": {
+            "description": "API请求body",
+            "type": "dict",
+            "hint": "仅POST请求时配置当前API所需的body，不需要请留空”",
+            "default": {}
+          },
+          "data_path": {
+            "description": "返回值解析路径",
+            "type": "string",
+            "hint": "如果返回值是json，且你仅需要提取某一部分，可以在此配置，支持多级嵌套，例如“key1.key2”,不需要请留空”",
+            "default": ""
+          },
+          "auto_play": {
+            "description": "是否自动尝试播放语音",
+            "type": "bool",
+            "hint": "true：适配平台自动播放；false：仅返回音频URL",
+            "default": true
+          },
+          "format": {
+            "description": "支持的音频格式",
+            "type": "string",
+            "hint": "逗号分隔，如mp3,wav,amr",
+            "default": "mp3,wav"
+          }
+        }
+      },
+      "video_type": {
+        "name": "视频类型API",
+        "hint": "返回值为视频的API",
+        "items": {
+          "api_name": {
+            "description": "触发命令",
+            "type": "string",
+            "hint": "用于指令调用，不可重复、不含特殊字符，如weather、voice_api、video_api",
+            "default": "default_api"
+          },
+          "api_url": {
+            "description": "API请求地址",
+            "type": "list",
+            "hint": "支持http/https，如https://api.example.com/weather、https://api.example.com/voice",
+            "default": ""
+          },
+          "method": {
+            "description": "请求方式",
+            "type": "string",
+            "hint": "仅支持GET/POST",
+            "options": [
+              "GET",
+              "POST"
+            ],
+            "default": "GET"
+          },
+          "timeout": {
+            "description": "当前API请求超时时间（秒）",
+            "type": "int",
+            "hint": "优先级高于全局默认超时，建议10-30秒，避免过短导致请求失败",
+            "default": 0
+          },
+          "api_rate_limit": {
+            "description": "当前API单独调用频率限制（次/分钟）",
+            "type": "int",
+            "hint": "优先级高于全局频率限制，0表示继承全局限制",
+            "default": 0
+          },
+          "trigger_type": {
+            "description": "触发方式",
+            "type": "string",
+            "options": [
+              "global",
+              "direct",
+              "mention_only"
+            ],
+            "labels": [
+              "使用全局设置",
+              "直接对话触发",
+              "仅@机器人时触发"
+            ],
+            "default": "global",
+            "hint": "单独设置此API的触发方式"
+          },
+          "params": {
+            "description": "API请求参数列表",
+            "type": "dict",
+            "hint": "配置当前API所需的请求参数，格式为键值对，不需要请留空",
+            "default": {}
+          },
+          "headers": {
+            "description": "API请求头",
+            "type": "dict",
+            "hint": "配置当前API所需的请求headers，不需要请留空”",
+            "default": {}
+          },
+          "body": {
+            "description": "API请求body",
+            "type": "dict",
+            "hint": "仅POST请求时配置当前API所需的body，不需要请留空”",
+            "default": {}
+          },
+          "data_path": {
+            "description": "返回值解析路径",
+            "type": "string",
+            "hint": "如果返回值是json，且你仅需要提取某一部分，可以在此配置，支持多级嵌套，例如“key1.key2”,不需要请留空”",
+            "default": ""
+          },
+          "auto_play": {
+            "description": "是否自动预览视频",
+            "type": "bool",
+            "hint": "true：直接发送视频；false：发送视频URL",
+            "default": true
+          },
+          "max_size": {
+            "description": "视频最大允许大小（MB）",
+            "type": "int",
+            "hint": "超过此大小的视频仅返回URL，0表示不限制",
+            "default": 300
+          }
+        }
+      }
+    }
+  }
+}
