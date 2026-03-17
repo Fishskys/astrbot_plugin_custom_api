@@ -21,35 +21,71 @@ import astrbot.api.message_components as Comp
 
 
 class RateLimiter:
-    """频率限制器"""
-
     def __init__(self):
-        self.user_calls = defaultdict(list)
-        self.api_calls = defaultdict(lambda: defaultdict(list))
+        self.user_calls = defaultdict(list)  # 用户全局调用记录
+        self.api_calls = defaultdict(lambda: defaultdict(list))  # API维度调用记录
+        self.expire_seconds = 60  # 统计窗口 60 秒
+        # 启动后台定时清理任务
+        asyncio.create_task(self._periodic_cleanup())
+
+    async def _periodic_cleanup(self):
+        """
+        后台定时任务：每 120 秒自动清理所有过期数据
+        """
+        while True:
+            await asyncio.sleep(120)  # 每2分钟清理一次
+            try:
+                self._clean_all_expired()
+            except Exception as e:
+                pass
+
+    def _clean_all_expired(self):
+        """主动清理所有用户的过期记录"""
+        now = time.time()
+        cutoff = now - self.expire_seconds
+
+        # 清理 user_calls
+        for user_id in list(self.user_calls.keys()):
+            # 只保留 60s 内的记录
+            self.user_calls[user_id] = [
+                t for t in self.user_calls[user_id] if t > cutoff
+            ]
+            # 如果用户没有任何记录了，直接删除键，释放内存
+            if not self.user_calls[user_id]:
+                del self.user_calls[user_id]
+
+        # 清理 api_calls
+        for api_key in list(self.api_calls.keys()):
+            for user_id in list(self.api_calls[api_key].keys()):
+                self.api_calls[api_key][user_id] = [
+                    t for t in self.api_calls[api_key][user_id] if t > cutoff
+                ]
+                if not self.api_calls[api_key][user_id]:
+                    del self.api_calls[api_key][user_id]
+            # 如果 API 没有任何用户记录，删除 API 键
+            if not self.api_calls[api_key]:
+                del self.api_calls[api_key]
 
     def is_allowed(self, user_id: str, api_key: str, limit: int) -> bool:
-        """检查是否超过频率限制"""
         if limit <= 0:
             return True
 
         now = time.time()
-        one_minute_ago = now - 60
+        cutoff = now - self.expire_seconds
 
-        # 清理过期记录
-        self.user_calls[user_id] = [
-            t for t in self.user_calls[user_id] if t > one_minute_ago
-        ]
+        # 惰性清理（保留，不影响）
+        self.user_calls[user_id] = [t for t in self.user_calls[user_id] if t > cutoff]
         self.api_calls[api_key][user_id] = [
-            t for t in self.api_calls[api_key][user_id] if t > one_minute_ago
+            t for t in self.api_calls[api_key][user_id] if t > cutoff
         ]
 
-        # 检查限制
+        # 判断是否超限
         if len(self.user_calls[user_id]) >= limit:
             return False
         if len(self.api_calls[api_key][user_id]) >= limit:
             return False
 
-        # 记录调用
+        # 添加新记录
         self.user_calls[user_id].append(now)
         self.api_calls[api_key][user_id].append(now)
         return True
@@ -60,6 +96,7 @@ class CustomAPIManager(Star):
         super().__init__(context)
         self.config = config
         self.rate_limiter = RateLimiter()
+        self.command_list = self._build_command_list()
         self.api_map = self._build_api_map()
 
         # 媒体类型映射
@@ -70,6 +107,28 @@ class CustomAPIManager(Star):
             "video": self._process_video_response,
         }
 
+    def _build_command_list(self):
+        """平铺式指令列表"""
+        command_list = defaultdict(list)
+        custom_apis = self.config.get("custom_apis", [])
+
+        for api_config in custom_apis:
+            template_key = api_config.get("__template_key", "")
+            api_name = api_config.get("api_name", "")
+            commands = api_name.split()
+
+            if commands:
+                for command in commands:
+                    api_info = {
+                        "type": template_key.replace(
+                            "_type", ""
+                        ),  # text, img, audio, video
+                        "api_url": api_config.get("api_url", []),
+                    }
+                    command_list[command].append(api_info)
+
+        return dict(command_list)
+
     def _build_api_map(self) -> Dict[str, List[Dict[str, Any]]]:
         """构建指令到API的映射"""
         api_map = defaultdict(list)
@@ -77,16 +136,18 @@ class CustomAPIManager(Star):
 
         for api_config in custom_apis:
             template_key = api_config.get("__template_key", "")
-            command = api_config.get("api_name", "").lower()
+            api_name = api_config.get("api_name", "")
+            commands = api_name.split()
 
-            if command:
-                api_info = {
-                    "type": template_key.replace(
-                        "_type", ""
-                    ),  # text, img, audio, video
-                    "config": api_config,
-                }
-                api_map[command].append(api_info)
+            if commands:
+                for command in commands:
+                    api_info = {
+                        "type": template_key.replace(
+                            "_type", ""
+                        ),  # text, img, audio, video
+                        "config": api_config,
+                    }
+                    api_map[command].append(api_info)
 
         return dict(api_map)
 
@@ -203,7 +264,7 @@ class CustomAPIManager(Star):
         command = api_config.get("api_name", "")
         api_type = selected_api.get("type", "")
         api_key = f"{command}_{api_type}"
-        rate_limit = api_config.get("rate_limit", 0)
+        rate_limit = api_config.get("api_rate_limit", 0)
         if rate_limit == 0:
             rate_limit = self.config.get("global_rate_limit", 0)
 
@@ -212,13 +273,12 @@ class CustomAPIManager(Star):
         else:
             return True
 
-    def _params_handle(self, event: AstrMessageEvent, parts: list, selected_api: dict):
+    def _params_handle(self, command: str, parts: list, selected_api: dict):
         """
         根据输入参数对url或params进行处理
         """
         # 对params参数操作，copy一份，避免影响原来的配置
         api_config = copy.deepcopy(selected_api["config"])
-        command = api_config.get("api_name", "")
         params = api_config.get("params", "")
         # 从url列表中随机选择一个
         api_url_list = api_config.get("api_url", [])
@@ -558,16 +618,19 @@ class CustomAPIManager(Star):
     @filter.command("apilist", alias={"api列表", "APILIST"})
     async def api_list(self, event: AstrMessageEvent):
         """显示所有可用的API列表"""
-        if not self.api_map:
+        if not self.command_list:
             yield event.plain_result("暂无配置的API")
             return
 
         list_text = "可用API列表：\n\n"
 
-        for command, apis in self.api_map.items():
-            api_types = [api["type"] for api in apis]
-            type_str = "/".join(api_types)
-            list_text += f"• /{command} ({type_str}) - {len(apis)}个API\n"
+        for command, apis in self.command_list.items():
+            if apis:
+                api_num = len(apis)
+                api_type = apis[0].get("type", "")
+                # url_num = [len(api.get("api_url", [])) for api in apis]
+                # url_text = "、".join([f"{{p}}" for p in url_num])
+                list_text += f"• /{command} ({api_type}) - {api_num}个api\n"
 
         list_text += "\n💡 提示：直接输入指令即可调用对应的API"
         yield event.plain_result(list_text)
@@ -575,7 +638,7 @@ class CustomAPIManager(Star):
     @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("api配置")
     async def api_conf(self, event: AstrMessageEvent):
-        yield event.plain_result(str(self.api_map))
+        yield event.plain_result(str(self.command_list))
 
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def handle_all_messages(self, event: AstrMessageEvent):
@@ -589,7 +652,7 @@ class CustomAPIManager(Star):
 
         # 指令匹配检测
         command = parts[0].lower()
-        if command not in self.api_map:
+        if command not in self.command_list:
             return
 
         # 检查是否匹配API指令
@@ -614,7 +677,7 @@ class CustomAPIManager(Star):
             return
         # 参数处理
         err_msg, api_config = self._params_handle(
-            event=event, parts=parts, selected_api=selected_api
+            command=command, parts=parts, selected_api=selected_api
         )
         if err_msg:
             yield event.plain_result(err_msg)
