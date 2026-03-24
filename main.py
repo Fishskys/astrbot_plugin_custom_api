@@ -10,7 +10,7 @@ import base64
 
 from typing import Dict, List, Any, Optional, Tuple
 from collections import defaultdict
-from urllib.parse import urlparse
+import urllib.parse
 
 import aiohttp
 import asyncio
@@ -25,19 +25,27 @@ class RateLimiter:
         self.user_calls = defaultdict(list)  # 用户全局调用记录
         self.api_calls = defaultdict(lambda: defaultdict(list))  # API维度调用记录
         self.expire_seconds = 60  # 统计窗口 60 秒
-        # 启动后台定时清理任务
-        asyncio.create_task(self._periodic_cleanup())
+        self._cleanup_task = None  # 不在 __init__ 创建异步任务
+
+    def _start_cleanup_task(self):
+        """
+        惰性启动：只有在需要时才创建后台任务
+        任何框架、任何环境都不会报错
+        """
+        try:
+            # 只启动一次
+            if self._cleanup_task is None or self._cleanup_task.done():
+                self._cleanup_task = asyncio.create_task(self._periodic_cleanup())
+        except RuntimeError:
+            pass
 
     async def _periodic_cleanup(self):
-        """
-        后台定时任务：每 120 秒自动清理所有过期数据
-        """
         while True:
-            await asyncio.sleep(120)  # 每2分钟清理一次
+            await asyncio.sleep(120)
             try:
                 self._clean_all_expired()
             except Exception as e:
-                pass
+                logger.error(f"[限流清理任务] 执行异常: {str(e)}", exc_info=True)
 
     def _clean_all_expired(self):
         """主动清理所有用户的过期记录"""
@@ -67,13 +75,15 @@ class RateLimiter:
                 del self.api_calls[api_key]
 
     def is_allowed(self, user_id: str, api_key: str, limit: int) -> bool:
+        # 自动启动清理任务
+        self._start_cleanup_task()
+
         if limit <= 0:
             return True
 
         now = time.time()
         cutoff = now - self.expire_seconds
-
-        # 惰性清理（保留，不影响）
+        # 惰性清理
         self.user_calls[user_id] = [t for t in self.user_calls[user_id] if t > cutoff]
         self.api_calls[api_key][user_id] = [
             t for t in self.api_calls[api_key][user_id] if t > cutoff
@@ -91,6 +101,12 @@ class RateLimiter:
         return True
 
 
+@register(
+    "astrbot_plugin_custom_api",
+    "Fishskys",
+    "支持多样化的外部API调用，可处理文本、图片、语音和视频类型API，支持自定义参数配置，关键词触发调用",
+    "0.1.3",
+)
 class CustomAPIManager(Star):
     def __init__(self, context: Context, config: Dict[str, Any]):
         super().__init__(context)
@@ -114,7 +130,7 @@ class CustomAPIManager(Star):
 
         for api_config in custom_apis:
             template_key = api_config.get("__template_key", "")
-            api_name = api_config.get("api_name", "")
+            api_name = api_config.get("api_name", "").lower()
             commands = api_name.split()
 
             if commands:
@@ -136,7 +152,7 @@ class CustomAPIManager(Star):
 
         for api_config in custom_apis:
             template_key = api_config.get("__template_key", "")
-            api_name = api_config.get("api_name", "")
+            api_name = api_config.get("api_name", "").lower()
             commands = api_name.split()
 
             if commands:
@@ -198,19 +214,26 @@ class CustomAPIManager(Star):
         key_len = len(key_list)
         return key_list, key_len
 
+    def _if_params_has_emptyvalues(self, params: dict) -> bool:
+        # 判断params是否有空值
+        if not params:
+            return False
+        empty_keys = [k for k, v in params.items() if v == ""]
+        if not empty_keys:
+            return False
+        else:
+            return True
+
     def _get_params_empty(self, params: dict) -> Any:
         # 返回参数列表空值
-        if not params:
-            return [], 0
         empty_keys = [k for k, v in params.items() if v == ""]
         empty_keys_len = len(empty_keys)
         return empty_keys, empty_keys_len
 
     def _replace_url_params(self, url: str, args_list: list):
         """
-        按顺序填充URL中的占位符
+        按顺序填充URL中的占位符（已做URL编码，安全防SSRF）
         """
-        # 找到所有占位符
         try:
             parts = url.split("{")
             result = parts[0]
@@ -218,12 +241,15 @@ class CustomAPIManager(Star):
             for i in range(1, len(parts)):
                 key_part, rest = parts[i].split("}", 1)
                 if i - 1 < len(args_list):
-                    result += str(args_list[i - 1]) + rest
+                    # 对参数做URL编码，防止路径穿越/参数污染/SSRF
+                    param_value = urllib.parse.quote(str(args_list[i - 1]), safe="")
+                    result += param_value + rest
                 else:
                     result += "{" + key_part + "}" + rest
             return result
         except Exception as e:
             logger.error(f"❌ 在处理url占位符时发生错误: {str(e)}")
+            raise
 
     def _replace_params(self, args_list: list, params: dict) -> Any:
         """
@@ -279,7 +305,7 @@ class CustomAPIManager(Star):
         """
         # 对params参数操作，copy一份，避免影响原来的配置
         api_config = copy.deepcopy(selected_api["config"])
-        params = api_config.get("params", "")
+        params = api_config.get("params", {})
         # 从url列表中随机选择一个
         api_url_list = api_config.get("api_url", [])
         if not isinstance(api_url_list, list):
@@ -307,26 +333,20 @@ class CustomAPIManager(Star):
                 )
                 err_msg = f"❌ 参数数量不匹配，url占位符需要{key_len}个值，实际传递了{args_len}个，用法：{param_placeholders}"
                 return err_msg, api_config
-                # raise Exception(
-                #     f"❌ 参数数量不匹配，url占位符需要{key_len}个值，实际传递了{args_len}个，用法：{param_placeholders}"
-                # )
             else:
                 api_config["api_url"] = self._replace_url_params(
                     url=api_url, args_list=args_list
                 )
                 return None, api_config
         # params有空值情况
-        elif self._get_params_empty(api_config.get("params", "")) != 0:
-            key_list, key_len = self._get_params_empty(api_config.get("params", ""))
+        elif self._if_params_has_emptyvalues(api_config.get("params", {})):
+            key_list, key_len = self._get_params_empty(api_config.get("params", {}))
             if args_len != key_len:
                 param_placeholders = f"/{command} " + " ".join(
                     [f"{{{p}}}" for p in key_list]
                 )
                 err_msg = f"❌ 参数数量不匹配，params需要{key_len}个参数值，实际传递了{args_len}个，用法：{param_placeholders}"
                 return err_msg, api_config
-                # raise Exception(
-                #     f"❌ 参数数量不匹配，params需要{key_len}个参数值，实际传递了{args_len}个，用法：{param_placeholders}"
-                # )
             else:
                 api_config["params"] = self._replace_params(
                     params=params, args_list=args_list
@@ -346,7 +366,7 @@ class CustomAPIManager(Star):
         """
         if not content_type:
             # 从URL推断类型
-            parsed_url = urlparse(url)
+            parsed_url = urllib.parse.urlparse(url)
             mime_type, _ = mimetypes.guess_type(parsed_url.path)
             content_type = mime_type or ""
 
@@ -388,7 +408,12 @@ class CustomAPIManager(Star):
         """
         调用API并返回结果
         返回: (响应数据, Content-Type, 媒体类型)
+        保证：任何情况下都返回稳定的三元组，不会出现未定义变量 / None
         """
+        response_data = None
+        content_type = ""
+        media_type = ""
+
         api_url = api_config.get("api_url", "")
         method = api_config.get("method", "GET")
         params = api_config.get("params", {})
@@ -408,10 +433,12 @@ class CustomAPIManager(Star):
                                 "Content-Type", ""
                             ).split(";")[0]
                             media_type = self._detect_media_type(content_type, api_url)
+
                             if media_type in ["json", "text"]:
                                 try:
+                                    # 捕获完整JSON异常
                                     response_data = await response.json()
-                                except json.JSONDecodeError:
+                                except (json.JSONDecodeError, aiohttp.ContentTypeError):
                                     response_data = await response.text()
                             else:
                                 response_data = await response.read()
@@ -428,10 +455,12 @@ class CustomAPIManager(Star):
                                 "Content-Type", ""
                             ).split(";")[0]
                             media_type = self._detect_media_type(content_type, api_url)
+
                             if media_type in ["json", "text"]:
                                 try:
+                                    # 捕获完整JSON异常
                                     response_data = await response.json()
-                                except json.JSONDecodeError:
+                                except (json.JSONDecodeError, aiohttp.ContentTypeError):
                                     response_data = await response.text()
                             else:
                                 response_data = await response.read()
@@ -440,11 +469,14 @@ class CustomAPIManager(Star):
                         return response_data, content_type, media_type
                 else:
                     raise Exception(f"❌ 不支持的请求方法: {method}，请修改后台配置")
+
         except asyncio.TimeoutError:
-            logger.warning(f"请求超时")
+            logger.warning(f"⚠️ 请求超时")
+            return response_data, content_type, media_type
+
         except Exception as e:
             logger.error(f"❌ API调用失败: {str(e)}")
-            raise
+            return response_data, content_type, media_type
 
     # 响应处理
     async def _process_text_response(
@@ -499,15 +531,23 @@ class CustomAPIManager(Star):
 
             # 二进制图片
             elif isinstance(data, bytes):
-                img_bytes = data
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as f:
-                    f.write(img_bytes)
-                yield event.image_result(f.name)
-                os.unlink(f.name)
-                return
-                # b64_str = base64.b64encode(data).decode("utf-8")
-                # yield event.image_result(f"base64://{b64_str}")
-                # return
+                try:
+                    img_bytes = data
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as f:
+                        f.write(img_bytes)
+                        f.flush()  # 确保写入磁盘
+                    try:
+                        # 先发送，框架会在这里异步读取文件
+                        yield event.image_result(f.name)
+                    finally:
+                        try:
+                            os.unlink(f.name)
+                        except Exception:
+                            pass
+                    return
+                except:
+                    pass
+
             # 3. 纯字符串 Base64
             elif isinstance(data, str):
                 try:
@@ -516,8 +556,15 @@ class CustomAPIManager(Star):
                     img_bytes = base64.b64decode(data)
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as f:
                         f.write(img_bytes)
-                    yield event.image_result(f.name)
-                    os.unlink(f.name)
+                        f.flush()  # 确保写入磁盘
+                    try:
+                        # 先发送，框架会在这里异步读取文件
+                        yield event.image_result(f.name)
+                    finally:
+                        try:
+                            os.unlink(f.name)
+                        except Exception:
+                            pass
                     return
                 except:
                     pass
