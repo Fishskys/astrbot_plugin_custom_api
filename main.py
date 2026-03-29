@@ -104,7 +104,7 @@ class RateLimiter:
     "astrbot_plugin_custom_api",
     "Fishskys",
     "支持多样化的外部API调用，可处理文本、图片、语音和视频类型API，支持自定义参数配置，关键词触发调用",
-    "0.2.0",
+    "0.2.1",
 )
 class CustomAPIManager(Star):
     def __init__(self, context: Context, config: Dict[str, Any]):
@@ -124,7 +124,7 @@ class CustomAPIManager(Star):
         }
 
     def _build_command_list(self):
-        """平铺式指令列表"""
+        """扁平化指令列表，面向用户"""
         command_list = defaultdict(list)
         custom_apis = self.config.get("custom_apis", [])
 
@@ -146,7 +146,7 @@ class CustomAPIManager(Star):
         return dict(command_list)
 
     def _build_api_map(self) -> Dict[str, List[Dict[str, Any]]]:
-        """构建指令到API的映射"""
+        """构建指令到API的映射，程序用"""
         api_map = defaultdict(list)
         custom_apis = self.config.get("custom_apis", [])
 
@@ -213,7 +213,7 @@ class CustomAPIManager(Star):
     @staticmethod
     def _replace_url_params(url: str, args_list: list):
         """
-        按顺序填充URL中的占位符（已做URL编码，安全防SSRF）
+        按顺序填充URL中的占位符（已做URL编码）
         """
         try:
             parts = url.split("{")
@@ -397,7 +397,7 @@ class CustomAPIManager(Star):
         media_type = ""
 
         api_url = api_config.get("api_url", "")
-        method = api_config.get("method", "GET")
+        method = api_config.get("method", "GET").upper()
         params = api_config.get("params", {})
         headers = api_config.get("headers", {})
         body = api_config.get("body", {})
@@ -474,12 +474,15 @@ class CustomAPIManager(Star):
 
             if isinstance(data, dict) and data_path:
                 textList = self._get_nested_value(data, data_path)
+            elif isinstance(data, str):
+                textList = [data.strip()]
             else:
-                textList = [str(data.strip())]
+                yield event.plain_result("⚠️ API返回了不支持的文本类型")
 
             if textList:
                 for text in textList:
-                    yield event.plain_result(text.strip())
+                    if isinstance(text, str):
+                        yield event.plain_result(text.strip())
             else:
                 yield event.plain_result("⚠️ API返回空文本或提取路径错误")
 
@@ -507,7 +510,7 @@ class CustomAPIManager(Star):
                     # json中有base64 str
                     elif "base64," in img:
                         img = img.split(",")[1]
-                        chain.append(Comp.Image.fromBase64(img_content))
+                        chain.append(Comp.Image.fromBase64(img))
                 yield event.chain_result(chain)
                 return
 
@@ -518,21 +521,26 @@ class CustomAPIManager(Star):
                     chain = [Comp.Image.fromBytes(img_bytes)]
                     yield event.chain_result(chain)
                     return
-                except:
+                except Exception as e:
                     yield event.plain_result("❌ 尝试发送二进制格式图片失败")
+                    logger.error(f"尝试发送二进制格式图片失败: {str(e)}", exc_info=True)
+                    return
 
             # 3. 纯字符串 Base64
             elif isinstance(data, str):
                 try:
                     if "base64," in data:
                         data = data.split("base64,")[1]
-                    chain = [Comp.Image.fromBase64(img_content)]
+                    chain = [Comp.Image.fromBase64(data)]
                     yield event.chain_result(chain)
                     return
-                except:
+                except Exception as e:
                     yield event.plain_result("❌ 尝试发送base64格式图片失败")
+                    logger.error(f"尝试发送base64格式图片失败: {str(e)}", exc_info=True)
+                    return
             else:
                 yield event.plain_result(f"❌ 不支持的图片格式")
+                return
         except Exception as e:
             logger.error(f"处理图片响应失败: {str(e)}", exc_info=True)
             yield event.plain_result(f"❌ 图片处理失败: {str(e)}")
@@ -546,10 +554,12 @@ class CustomAPIManager(Star):
 
             if data_path and isinstance(data, dict):
                 # 从JSON中获取音频URL
-                audio_url = self._get_nested_value(data, data_path)
-                if audio_url:
-                    # 构建语音消息链
-                    chain = [Comp.Record(url=audio_url)]
+                audio_url_list = self._get_nested_value(data, data_path)
+                if audio_url_list:
+                    chain = []
+                    for audio_url in audio_url_list:
+                        # 构建语音消息链
+                        chain.append(Comp.Record(url=audio_url))
                     yield event.chain_result(chain)
                 else:
                     yield event.plain_result("⚠️ 提取路径未找到音频URL")
@@ -579,10 +589,12 @@ class CustomAPIManager(Star):
 
             if data_path and isinstance(data, dict):
                 # 从JSON中获取视频URL
-                video_url = self._get_nested_value(data, data_path)
-                if video_url:
+                video_url_list = self._get_nested_value(data, data_path)
+                if video_url_list:
                     # 构建视频消息链
-                    chain = [Comp.Video.fromURL(url=video_url)]
+                    chain = []
+                    for video_url in video_url_list:
+                        chain.append(Comp.Video.fromURL(url=video_url))
                     yield event.chain_result(chain)
                 else:
                     yield event.plain_result("⚠️ 提取路径未找到视频URL")
@@ -647,7 +659,7 @@ class CustomAPIManager(Star):
         """处理所有消息，检查是否匹配API指令"""
         message = event.message_str.strip()
 
-        # 1. 去掉开头 / 并按空格分割所有参数（支持无限个）
+        # 去掉开头 / 并按空格分割所有参数（支持无限个），以支持可配置的上下文自动触发，设置中可关闭自动触发
         parts = message.lstrip("/").split()
         if not parts:
             return
@@ -696,7 +708,7 @@ class CustomAPIManager(Star):
             # 根据检测到的媒体类型调用对应的处理函数
             # 对于json类型，根据api类型处理
             # 其它类型，根据content_type获取的media_type处理
-            if media_type == "json":
+            if media_type == "json" and api_type in self.media_type_handlers:
                 handler = self.media_type_handlers[api_type]
                 async for result in handler(response_data, api_config, event):
                     yield result
