@@ -5,8 +5,7 @@ import re
 import mimetypes
 import copy
 import tempfile
-import os
-import base64
+import dpath
 
 from typing import Dict, List, Any, Optional, Tuple
 from collections import defaultdict
@@ -74,12 +73,12 @@ class RateLimiter:
             if not self.api_calls[api_key]:
                 del self.api_calls[api_key]
 
-    def is_allowed(self, user_id: str, api_key: str, limit: int) -> bool:
+    def _rate_limit(self, user_id: str, api_key: str, limit: int) -> bool:
         # 自动启动清理任务
         self._start_cleanup_task()
 
         if limit <= 0:
-            return True
+            return False
 
         now = time.time()
         cutoff = now - self.expire_seconds
@@ -91,26 +90,27 @@ class RateLimiter:
 
         # 判断是否超限
         if len(self.user_calls[user_id]) >= limit:
-            return False
+            return True
         if len(self.api_calls[api_key][user_id]) >= limit:
-            return False
+            return True
 
         # 添加新记录
         self.user_calls[user_id].append(now)
         self.api_calls[api_key][user_id].append(now)
-        return True
+        return False
 
 
 @register(
     "astrbot_plugin_custom_api",
     "Fishskys",
     "支持多样化的外部API调用，可处理文本、图片、语音和视频类型API，支持自定义参数配置，关键词触发调用",
-    "0.1.3",
+    "0.2.0",
 )
 class CustomAPIManager(Star):
     def __init__(self, context: Context, config: Dict[str, Any]):
         super().__init__(context)
         self.config = config
+        self.global_timeout = config.get("global_timeout", 30)
         self.rate_limiter = RateLimiter()
         self.command_list = self._build_command_list()
         self.api_map = self._build_api_map()
@@ -167,54 +167,33 @@ class CustomAPIManager(Star):
 
         return dict(api_map)
 
-    def _get_nested_value(self, data: Any, path: str) -> Any:
+    @staticmethod
+    def _get_nested_value(data: Any, path: str) -> list:
         """
-        嵌套字典取值
-        1.支持数字下标：data.0.urlsList.0.url
-        2.默认取列表第一项：data.urlsList.url
-        杂交写法也没问题：data.0.urlsList.url
+        采用dpath嵌套字典取值
+        1.精确取值：data.0.urlsList.0.url
+        2.模糊取值：data.*.urlsList.*.url
+        3.多层通配符：**.url，如果不可用，请用单层通配符写法
         """
         if not path:
             return data
-
-        keys = path.split(".")
-        result = data
-
-        for key in keys:
-            if isinstance(result, dict):
-                if key in result:
-                    result = result[key]
-                else:
-                    return None
-
-            elif isinstance(result, list):
-                if key.isdigit():
-                    idx = int(key)
-                    if 0 <= idx < len(result):
-                        result = result[idx]
-                    else:
-                        return None
-                else:
-                    if len(result) == 0:
-                        return None
-                    result = result[0]
-                    if key in result:
-                        result = result[key]
-            else:
-                return None
+        result = dpath.values(data, path, separator=".")
         return result
 
-    def _if_url_has_placeholders(self, url: str) -> bool:
+    @staticmethod
+    def _if_url_has_placeholders(url: str) -> bool:
         # 判断url是否有待传参数
         return bool(re.search(r"\{(\w+)\}", url))
 
-    def _get_placeholders(self, url: str) -> Any:
+    @staticmethod
+    def _get_placeholders(url: str) -> Any:
         # 返回url待传参数及数量
         key_list = re.findall(r"\{(\w+)\}", url)
         key_len = len(key_list)
         return key_list, key_len
 
-    def _if_params_has_emptyvalues(self, params: dict) -> bool:
+    @staticmethod
+    def _if_params_has_emptyvalues(params: dict) -> bool:
         # 判断params是否有空值
         if not params:
             return False
@@ -224,13 +203,15 @@ class CustomAPIManager(Star):
         else:
             return True
 
-    def _get_params_empty(self, params: dict) -> Any:
+    @staticmethod
+    def _get_params_empty(params: dict) -> Any:
         # 返回参数列表空值
         empty_keys = [k for k, v in params.items() if v == ""]
         empty_keys_len = len(empty_keys)
         return empty_keys, empty_keys_len
 
-    def _replace_url_params(self, url: str, args_list: list):
+    @staticmethod
+    def _replace_url_params(url: str, args_list: list):
         """
         按顺序填充URL中的占位符（已做URL编码，安全防SSRF）
         """
@@ -251,7 +232,8 @@ class CustomAPIManager(Star):
             logger.error(f"❌ 在处理url占位符时发生错误: {str(e)}")
             raise
 
-    def _replace_params(self, args_list: list, params: dict) -> Any:
+    @staticmethod
+    def _replace_params(args_list: list, params: dict) -> list:
         """
         按顺序将用户输入的参数填充到值为空的参数字典中
         """
@@ -260,7 +242,7 @@ class CustomAPIManager(Star):
             params[key] = value
         return params
 
-    def _should_trigger(self, event: AstrMessageEvent, selected_api: dict) -> Any:
+    def _should_trigger(self, event: AstrMessageEvent, selected_api: dict) -> bool:
         """
         判断是否应该触发API
         1. 单个API配置优先
@@ -294,10 +276,10 @@ class CustomAPIManager(Star):
         if rate_limit == 0:
             rate_limit = self.config.get("global_rate_limit", 0)
 
-        if self.rate_limiter.is_allowed(user_id, api_key, rate_limit):
-            return False
-        else:
+        if self.rate_limiter._rate_limit(user_id, api_key, rate_limit):
             return True
+        else:
+            return False
 
     def _params_handle(self, command: str, parts: list, selected_api: dict):
         """
@@ -419,7 +401,11 @@ class CustomAPIManager(Star):
         params = api_config.get("params", {})
         headers = api_config.get("headers", {})
         body = api_config.get("body", {})
-        timeout = api_config.get("timeout", self.config.get("global_timeout", 30))
+        global_timeout = self.config.get("global_timeout", 30)
+        timeout = api_config.get("timeout", global_timeout)
+        # timeout 在配置文件中只能配置为int类型，这里仅检测是否为负数
+        if timeout < 0:
+            timeout = 30
 
         try:
             timeout = aiohttp.ClientTimeout(total=timeout)
@@ -487,17 +473,18 @@ class CustomAPIManager(Star):
             data_path = api_config.get("data_path", "")
 
             if isinstance(data, dict) and data_path:
-                text = self._get_nested_value(data, data_path)
+                textList = self._get_nested_value(data, data_path)
             else:
-                text = str(data)
+                textList = [str(data.strip())]
 
-            if text and text.strip():
-                yield event.plain_result(text.strip())
+            if textList:
+                for text in textList:
+                    yield event.plain_result(text.strip())
             else:
-                yield event.plain_result("⚠️ API返回空文本")
+                yield event.plain_result("⚠️ API返回空文本或提取路径错误")
 
         except Exception as e:
-            logger.error(f"处理文本响应失败: {str(e)}")
+            logger.error(f"处理文本响应失败: {str(e)}", exc_info=True)
             yield event.plain_result(f"❌ 文本处理失败: {str(e)}")
 
     async def _process_img_response(
@@ -511,67 +498,43 @@ class CustomAPIManager(Star):
                 # 从JSON中获取图片URL
                 img_content = self._get_nested_value(data, data_path)
                 if not img_content:
-                    yield event.plain_result("⚠️ 未找到图片内容")
+                    yield event.plain_result("⚠️ 提取路径未找到图片内容")
                     return
-
-                img_content = str(img_content).strip()
-                # URL
-                if img_content.startswith(("http://", "https://")):
-                    yield event.image_result(img_content)
-                    return
-                # json中有base64 str
-                try:
-                    if "base64," in img_content:
-                        img_content = img_content.split(",")[1]
-                    # ✅ 关键：前面加 base64://
-                    yield event.image_result(f"base64://{img_content}")
-                    return
-                except:
-                    yield event.plain_result("❌ Base64 图片格式错误")
+                chain = []
+                for img in img_content:
+                    if img.startswith(("http://", "https://")):
+                        chain.append(Comp.Image.fromURL(img))
+                    # json中有base64 str
+                    elif "base64," in img:
+                        img = img.split(",")[1]
+                        chain.append(Comp.Image.fromBase64(img_content))
+                yield event.chain_result(chain)
+                return
 
             # 二进制图片
             elif isinstance(data, bytes):
                 try:
                     img_bytes = data
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as f:
-                        f.write(img_bytes)
-                        f.flush()  # 确保写入磁盘
-                    try:
-                        # 先发送，框架会在这里异步读取文件
-                        yield event.image_result(f.name)
-                    finally:
-                        try:
-                            os.unlink(f.name)
-                        except Exception:
-                            pass
+                    chain = [Comp.Image.fromBytes(img_bytes)]
+                    yield event.chain_result(chain)
                     return
                 except:
-                    pass
+                    yield event.plain_result("❌ 尝试发送二进制格式图片失败")
 
             # 3. 纯字符串 Base64
             elif isinstance(data, str):
                 try:
                     if "base64," in data:
                         data = data.split("base64,")[1]
-                    img_bytes = base64.b64decode(data)
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as f:
-                        f.write(img_bytes)
-                        f.flush()  # 确保写入磁盘
-                    try:
-                        # 先发送，框架会在这里异步读取文件
-                        yield event.image_result(f.name)
-                    finally:
-                        try:
-                            os.unlink(f.name)
-                        except Exception:
-                            pass
+                    chain = [Comp.Image.fromBase64(img_content)]
+                    yield event.chain_result(chain)
                     return
                 except:
-                    pass
+                    yield event.plain_result("❌ 尝试发送base64格式图片失败")
             else:
                 yield event.plain_result(f"❌ 不支持的图片格式")
         except Exception as e:
-            logger.error(f"处理图片响应失败: {str(e)}")
+            logger.error(f"处理图片响应失败: {str(e)}", exc_info=True)
             yield event.plain_result(f"❌ 图片处理失败: {str(e)}")
 
     async def _process_audio_response(
@@ -589,26 +552,22 @@ class CustomAPIManager(Star):
                     chain = [Comp.Record(url=audio_url)]
                     yield event.chain_result(chain)
                 else:
-                    yield event.plain_result("⚠️ 未找到音频URL")
+                    yield event.plain_result("⚠️ 提取路径未找到音频URL")
             else:
                 # 处理音频二进制数据
                 # 保存音频到临时文件
-
+                # 利用with的自动清理机制
                 with tempfile.NamedTemporaryFile(
-                    delete=False, suffix=".mp3"
+                    delete=True, suffix=".mp3"
                 ) as tmp_file:
                     tmp_file.write(data)
+                    tmp_file.flush()
                     tmp_file_path = tmp_file.name
-
-                # 发送音频（根据AstrBot API调整）
-                chain = [Comp.Record(file=tmp_file_path)]
-                yield event.chain_result(chain)
-
-                # 清理临时文件
-                os.unlink(tmp_file_path)
+                    chain = [Comp.Record(file=tmp_file_path)]
+                    yield event.chain_result(chain)
 
         except Exception as e:
-            logger.error(f"处理音频响应失败: {str(e)}")
+            logger.error(f"处理音频响应失败: {str(e)}", exc_info=True)
             yield event.plain_result(f"❌ 音频处理失败: {str(e)}")
 
     async def _process_video_response(
@@ -626,26 +585,22 @@ class CustomAPIManager(Star):
                     chain = [Comp.Video.fromURL(url=video_url)]
                     yield event.chain_result(chain)
                 else:
-                    yield event.plain_result("⚠️ 未找到视频URL")
+                    yield event.plain_result("⚠️ 提取路径未找到视频URL")
             else:
                 # 处理视频二进制数据
                 # 保存视频到临时文件
-
+                # 利用with的自动清理机制
                 with tempfile.NamedTemporaryFile(
-                    delete=False, suffix=".mp4"
+                    delete=True, suffix=".mp4"
                 ) as tmp_file:
                     tmp_file.write(data)
+                    tmp_file.flush()
                     tmp_file_path = tmp_file.name
-
-                # 发送视频（根据AstrBot API调整）
-                chain = [Comp.Video(file=tmp_file_path)]
-                yield event.chain_result(chain)
-
-                # 清理临时文件
-                os.unlink(tmp_file_path)
+                    chain = [Comp.Video(file=tmp_file_path)]
+                    yield event.chain_result(chain)
 
         except Exception as e:
-            logger.error(f"处理视频响应失败: {str(e)}")
+            logger.error(f"处理视频响应失败: {str(e)}", exc_info=True)
             yield event.plain_result(f"❌ 视频处理失败: {str(e)}")
 
     @filter.command("apihelp", alias={"api帮助", "APIHELP"})
@@ -705,14 +660,12 @@ class CustomAPIManager(Star):
         # 检查是否匹配API指令
         # 随机选择一个API
         api_list = self.api_map.get(command, [])
-        if not isinstance(api_list, list):
-            selected_api = api_list
-        else:
-            if not api_list:
-                yield event.plain_result("❌ 未配置 API 地址")
-                return
-            selected_api = random.choice(api_list)
-        api_type = selected_api["type"]
+        if not api_list:
+            yield event.plain_result("❌ 未配置 API 地址")
+            return
+
+        selected_api = random.choice(api_list)
+        api_type = selected_api.get("type", "text")
 
         # 触发条件检测
         if not self._should_trigger(event=event, selected_api=selected_api):
@@ -737,7 +690,9 @@ class CustomAPIManager(Star):
         try:
             # 调用API并获取响应
             response_data, content_type, media_type = await self._call_api(api_config)
-
+            if response_data is None:
+                yield event.plain_result(f"⚠️ 未获取到有效内容")
+                return
             # 根据检测到的媒体类型调用对应的处理函数
             # 对于json类型，根据api类型处理
             # 其它类型，根据content_type获取的media_type处理
@@ -753,7 +708,7 @@ class CustomAPIManager(Star):
                 yield event.plain_result(f"⚠️ 不支持的响应类型: {content_type}")
 
         except Exception as e:
-            logger.error(f"API调用出错: {str(e)}")
+            logger.error(f"API调用出错: {str(e)}", exc_info=True)
             yield event.plain_result(f"❌ API调用失败: {str(e)}")
 
         # 停止事件传播，防止其他插件处理
