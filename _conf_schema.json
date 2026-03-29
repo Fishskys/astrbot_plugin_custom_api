@@ -105,7 +105,7 @@
           "data_path": {
             "description": "返回值解析路径",
             "type": "string",
-            "hint": "如果返回值是json，且你仅需要提取某一部分，可以在此配置，支持多级嵌套，例如“key1.key2”,不需要请留空”",
+            "hint": "如果返回值是json，且你仅需要提取某一部分，可以在此配置，采用dpath格式，分割符为\".\",支持多级嵌套，例如“key1.key2”,不需要请留空",
             "default": ""
           },
           "auto_fold": {
@@ -197,7 +197,7 @@
           "data_path": {
             "description": "返回值解析路径",
             "type": "string",
-            "hint": "如果返回值是json，且你仅需要提取某一部分，可以在此配置，支持多级嵌套，例如“key1.key2”,不需要请留空”",
+            "hint": "如果返回值是json，且你仅需要提取某一部分，可以在此配置，采用dpath格式，分割符为\".\",支持多级嵌套，例如“key1.key2”,不需要请留空",
             "default": ""
           },
           "auto_preview": {
@@ -289,7 +289,7 @@
           "data_path": {
             "description": "返回值解析路径",
             "type": "string",
-            "hint": "如果返回值是json，且你仅需要提取某一部分，可以在此配置，支持多级嵌套，例如“key1.key2”,不需要请留空”",
+            "hint": "如果返回值是json，且你仅需要提取某一部分，可以在此配置，采用dpath格式，分割符为\".\",支持多级嵌套，例如“key1.key2”,不需要请留空",
             "default": ""
           },
           "auto_play": {
@@ -381,7 +381,7 @@
           "data_path": {
             "description": "返回值解析路径",
             "type": "string",
-            "hint": "如果返回值是json，且你仅需要提取某一部分，可以在此配置，支持多级嵌套，例如“key1.key2”,不需要请留空”",
+            "hint": "如果返回值是json，且你仅需要提取某一部分，可以在此配置，采用dpath格式，分割符为\".\",支持多级嵌套，例如“key1.key2”,不需要请留空",
             "default": ""
           },
           "auto_play": {

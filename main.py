@@ -473,18 +473,21 @@ class CustomAPIManager(Star):
             data_path = api_config.get("data_path", "")
 
             if isinstance(data, dict) and data_path:
-                textList = self._get_nested_value(data, data_path)
+                text_list = self._get_nested_value(data, data_path)
             elif isinstance(data, str):
-                textList = [data.strip()]
+                text_list = [data.strip()]
             else:
                 yield event.plain_result("⚠️ API返回了不支持的文本类型")
+                return
 
-            if textList:
-                for text in textList:
+            if text_list:
+                for text in text_list:
                     if isinstance(text, str):
                         yield event.plain_result(text.strip())
+                return
             else:
                 yield event.plain_result("⚠️ API返回空文本或提取路径错误")
+                return
 
         except Exception as e:
             logger.error(f"处理文本响应失败: {str(e)}", exc_info=True)
@@ -504,15 +507,22 @@ class CustomAPIManager(Star):
                     yield event.plain_result("⚠️ 提取路径未找到图片内容")
                     return
                 chain = []
-                for img in img_content:
-                    if img.startswith(("http://", "https://")):
-                        chain.append(Comp.Image.fromURL(img))
-                    # json中有base64 str
-                    elif "base64," in img:
-                        img = img.split(",")[1]
-                        chain.append(Comp.Image.fromBase64(img))
-                yield event.chain_result(chain)
-                return
+                try:
+                    for img in img_content:
+                        if img.startswith(("http://", "https://")):
+                            chain.append(Comp.Image.fromURL(img))
+                        # json中有base64 str
+                        elif "base64," in img:
+                            img = img.split(",")[1]
+                            chain.append(Comp.Image.fromBase64(img))
+                    yield event.chain_result(chain)
+                    return
+                except Exception as e:
+                    yield event.plain_result("❌ 尝试从JSON中提取并发送图片时失败")
+                    logger.error(
+                        f"尝试从JSON中提取并发送图片时失败: {str(e)}", exc_info=True
+                    )
+                    return
 
             # 二进制图片
             elif isinstance(data, bytes):
@@ -563,6 +573,7 @@ class CustomAPIManager(Star):
                     yield event.chain_result(chain)
                 else:
                     yield event.plain_result("⚠️ 提取路径未找到音频URL")
+                    return
             else:
                 # 处理音频二进制数据
                 # 保存音频到临时文件
@@ -598,6 +609,7 @@ class CustomAPIManager(Star):
                     yield event.chain_result(chain)
                 else:
                     yield event.plain_result("⚠️ 提取路径未找到视频URL")
+                    return
             else:
                 # 处理视频二进制数据
                 # 保存视频到临时文件
