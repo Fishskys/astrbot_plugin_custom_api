@@ -1,7 +1,8 @@
 import tempfile
 import urllib.parse
 import mimetypes
-
+import os
+import asyncio
 from typing import Dict, Any
 from astrbot.api import logger
 import astrbot.api.message_components as Comp
@@ -37,29 +38,32 @@ def detect_media_type(content_type: str, url: str = "") -> str:
 
     # json类型
     if any(ct in content_type for ct in ["application/json", "text/json"]):
+        logger.info("返回值判断为json类型")
         return "json"
     # 文本类型
-    elif any(
-        ct in content_type for ct in ["text/", "application/json", "application/xml"]
-    ):
+    elif any(ct in content_type for ct in ["text/", "application/xml"]):
+        logger.info("返回值判断为文本类型")
         return "text"
     # 图片类型
     elif any(
         ct in content_type
         for ct in ["image/", "png", "jpg", "jpeg", "gif", "bmp", "webp"]
     ):
+        logger.info("返回值判断为图片类型")
         return "img"
 
     # 音频类型
     elif any(
         ct in content_type for ct in ["audio/", "mp3", "wav", "ogg", "m4a", "amr"]
     ):
+        logger.info("返回值判断为音频类型")
         return "audio"
 
     # 视频类型
     elif any(
         ct in content_type for ct in ["video/", "mp4", "avi", "mov", "flv", "mkv"]
     ):
+        logger.info("返回值判断为视频类型")
         return "video"
 
     # 其他类型
@@ -67,7 +71,9 @@ def detect_media_type(content_type: str, url: str = "") -> str:
         return "other"
 
 
-async def process_text_response(data: Any, api_config: Dict[str, Any], event):
+async def process_text_response(
+    data: Any, api_config: Dict[str, Any], event, plugin_data_path
+):
     """处理文本类型响应"""
     try:
         data_path = api_config.get("data_path", "")
@@ -97,7 +103,9 @@ async def process_text_response(data: Any, api_config: Dict[str, Any], event):
         yield event.plain_result(f"❌ 文本处理失败: {str(e)}")
 
 
-async def process_img_response(data: Any, api_config: Dict[str, Any], event):
+async def process_img_response(
+    data: Any, api_config: Dict[str, Any], event, plugin_data_path
+):
     """处理图片类型响应"""
     try:
         chain = []
@@ -139,8 +147,8 @@ async def process_img_response(data: Any, api_config: Dict[str, Any], event):
 
         # 3. 纯字符串 Base64
         elif isinstance(data, str):
-            if img.startswith(("http://", "https://")):
-                chain.append(Comp.Image.fromURL(img))
+            if data.startswith(("http://", "https://")):
+                chain.append(Comp.Image.fromURL(data))
                 yield event.chain_result(chain)
                 return
             try:
@@ -161,7 +169,9 @@ async def process_img_response(data: Any, api_config: Dict[str, Any], event):
         yield event.plain_result(f"❌ 图片处理失败: {str(e)}")
 
 
-async def process_audio_response(data: Any, api_config: Dict[str, Any], event):
+async def process_audio_response(
+    data: Any, api_config: Dict[str, Any], event, plugin_data_path
+):
     """处理语音类型响应"""
     try:
         chain = []
@@ -180,23 +190,34 @@ async def process_audio_response(data: Any, api_config: Dict[str, Any], event):
                 return
         elif isinstance(data, str):
             if data.startswith(("http://", "https://")):
-                chain.append(Comp.Record.fromURL(data))
+                chain.append(Comp.Record(url=data))
                 yield event.chain_result(chain)
         elif isinstance(data, bytes):
-            # 利用with的自动清理机制
-            with tempfile.NamedTemporaryFile(delete=True, suffix=".mp3") as tmp_file:
+            # 使用 delete=False 避免异步生成器中临时文件提前被删除
+            tmp_file = tempfile.NamedTemporaryFile(
+                delete=False, suffix=".mp3", dir=plugin_data_path
+            )
+            try:
                 tmp_file.write(data)
                 tmp_file.flush()
                 tmp_file_path = tmp_file.name
+                tmp_file.close()
+                os.chmod(tmp_file_path, 0o666)
                 chain = [Comp.Record(file=tmp_file_path)]
                 yield event.chain_result(chain)
+                asyncio.create_task(delayed_cleanup(tmp_file_path, delay=60))
+            except Exception as e:
+                logger.error(f"音频发送失败: {e}")
+                os.unlink(tmp_file.name)
 
     except Exception as e:
         logger.error(f"处理音频响应失败: {str(e)}", exc_info=True)
         yield event.plain_result(f"❌ 音频处理失败: {str(e)}")
 
 
-async def process_video_response(data: Any, api_config: Dict[str, Any], event):
+async def process_video_response(
+    data: Any, api_config: Dict[str, Any], event, plugin_data_path
+):
     """处理视频类型响应"""
     try:
         chain = []
@@ -215,17 +236,40 @@ async def process_video_response(data: Any, api_config: Dict[str, Any], event):
                 return
         elif isinstance(data, str):
             if data.startswith(("http://", "https://")):
-                chain.append(Comp.Video.fromURL(data))
+                chain.append(Comp.Video(url=data))
                 yield event.chain_result(chain)
         elif isinstance(data, bytes):
-            # 利用with的自动清理机制
-            with tempfile.NamedTemporaryFile(delete=True, suffix=".mp4") as tmp_file:
+            # 使用 delete=False 避免异步生成器中临时文件提前被删除
+            tmp_file = tempfile.NamedTemporaryFile(
+                delete=False, suffix=".mp4", dir=plugin_data_path
+            )
+            try:
                 tmp_file.write(data)
                 tmp_file.flush()
                 tmp_file_path = tmp_file.name
+                tmp_file.close()
+                os.chmod(tmp_file_path, 0o666)
                 chain = [Comp.Video(file=tmp_file_path)]
                 yield event.chain_result(chain)
+                asyncio.create_task(delayed_cleanup(tmp_file_path, delay=60))
+            except Exception as e:
+                logger.error(f"视频发送失败: {e}")
+                os.unlink(tmp_file.name)
 
     except Exception as e:
         logger.error(f"处理视频响应失败: {str(e)}", exc_info=True)
         yield event.plain_result(f"❌ 视频处理失败: {str(e)}")
+
+
+async def delayed_cleanup(file_path: str, delay: float = 60):
+    """
+    延时删除文件，确保 NapCat 有足够时间读取并上传
+    :param file_path: 要删除的文件路径
+    :param delay: 延迟秒数（根据文件大小和网络情况调整）
+    """
+    try:
+        await asyncio.sleep(delay)
+        if os.path.exists(file_path):
+            os.unlink(file_path)
+    except Exception as e:
+        logger.warning(f"清理临时文件失败 {file_path}: {e}")

@@ -1,4 +1,4 @@
-from typing import Dict, List, Any, Tuple
+from typing import Dict, Any, Tuple
 import json
 import asyncio
 import aiohttp
@@ -43,9 +43,6 @@ async def call_api(api_config: Dict[str, Any], global_timeout) -> Tuple[Any, str
                 raise Exception(f"❌ 不支持的请求方法: {method}")
 
             async with req_func(api_url, **req_kwargs) as response:
-                response_data = None
-                content_type = ""
-                media_type = ""
 
                 # api响应只处理200
                 if response.status == 200:
@@ -57,10 +54,23 @@ async def call_api(api_config: Dict[str, Any], global_timeout) -> Tuple[Any, str
                     # 统一读取数据逻辑
                     if media_type in ["json", "text"]:
                         try:
-                            response_data = await response.json()
-                        except (json.JSONDecodeError, aiohttp.ContentTypeError):
+                            # 修复了json返回值被转为文本的bug
+                            response_data = await response.json(content_type=None)
+                        except json.JSONDecodeError:
                             response_data = await response.text()
                     else:
+                        # 二进制响应：检查文件大小，防止内存溢出
+                        content_length = response.headers.get("Content-Length")
+                        if content_length:
+                            max_size = api_config.get("max_size", 0)
+                            if (
+                                max_size > 0
+                                and int(content_length) > max_size * 1024 * 1024
+                            ):
+                                logger.warning(
+                                    f"⚠️ 响应大小 {content_length} Bytes 超过限制 {max_size} MB"
+                                )
+                                return None, content_type, media_type
                         response_data = await response.read()
                 else:
                     logger.error(f"❌ API请求失败，状态码: {response.status}")

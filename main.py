@@ -1,17 +1,25 @@
 import random
 from collections import defaultdict
 from typing import Dict, List, Any, Optional, Tuple
-
+import os
 import aiohttp
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
+from pathlib import Path
+from astrbot.core.utils.astrbot_path import get_astrbot_data_path
+
 
 from .core.RateLimiter import RateLimiter
-from .core.utils import *
-from .core.response_handle import *
-from .core.client import *
-from .core.params import *
+from .core.response_handle import (
+    process_select,
+    process_text_response,
+    process_img_response,
+    process_audio_response,
+    process_video_response,
+)
+from .core.client import call_api
+from .core.params import params_handle
 
 
 @register(
@@ -24,18 +32,21 @@ class CustomAPIManager(Star):
     def __init__(self, context: Context, config: Dict[str, Any]):
         super().__init__(context)
         self.config = config
-        self.global_timeout = config.get("global_timeout", 30)
+        self.global_timeout = config.get("global_default_timeout", 15)
         self.rate_limiter = RateLimiter()
         self.command_list = self._build_command_list()
         self.api_map = self._build_api_map()
-
+        self.plugin_data_path = (
+            Path(get_astrbot_data_path()) / "plugin_data" / self.name
+        )
+        os.makedirs(self.plugin_data_path, exist_ok=True)
         # 媒体类型映射
         self.media_type_handlers = {
             "text": process_text_response,
             "img": process_img_response,
             "audio": process_audio_response,
             "video": process_video_response,
-            "defalult": process_text_response,
+            "default": process_text_response,
         }
 
     def _build_command_list(self):
@@ -116,10 +127,7 @@ class CustomAPIManager(Star):
         if rate_limit == 0:
             rate_limit = self.config.get("global_rate_limit", 0)
 
-        if self.rate_limiter._rate_limit(user_id, api_key, rate_limit):
-            return True
-        else:
-            return False
+        return self.rate_limiter._rate_limit(user_id, api_key, rate_limit)
 
     @filter.command("apihelp", alias={"api帮助", "APIHELP"})
     async def api_help(self, event: AstrMessageEvent):
@@ -209,7 +217,7 @@ class CustomAPIManager(Star):
                 api_config, global_timeout=self.global_timeout
             )
             if response_data is None:
-                yield event.plain_result(f"⚠️ 未获取到有效内容")
+                yield event.plain_result(f"⚠️ 未获取到有效内容，具体请查看日志")
                 return
             # 根据检测到的媒体类型调用对应的处理函数
             # 对于json类型，根据api类型处理
@@ -220,7 +228,9 @@ class CustomAPIManager(Star):
             if process_err:
                 yield event.plain_result(process_err)
                 return
-            async for result in handler(response_data, api_config, event):
+            async for result in handler(
+                response_data, api_config, event, self.plugin_data_path
+            ):
                 yield result
 
         except Exception as e:

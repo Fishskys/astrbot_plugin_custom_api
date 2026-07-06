@@ -10,6 +10,7 @@ class RateLimiter:
         self.api_calls = defaultdict(lambda: defaultdict(list))  # API维度调用记录
         self.expire_seconds = 60  # 统计窗口 60 秒
         self._cleanup_task = None  # 不在 __init__ 创建异步任务
+        self._shutdown_event = asyncio.Event()  # 关闭信号
 
     def _start_cleanup_task(self):
         """
@@ -23,9 +24,24 @@ class RateLimiter:
         except RuntimeError:
             pass
 
+    async def shutdown(self):
+        """优雅关闭：取消后台清理任务"""
+        self._shutdown_event.set()
+        if self._cleanup_task and not self._cleanup_task.done():
+            self._cleanup_task.cancel()
+            try:
+                await self._cleanup_task
+            except asyncio.CancelledError:
+                pass
+        self._clean_all_expired()  # 最后一次清理
+
     async def _periodic_cleanup(self):
-        while True:
-            await asyncio.sleep(120)
+        while not self._shutdown_event.is_set():
+            try:
+                await asyncio.wait_for(self._shutdown_event.wait(), timeout=120)
+                break  # shutdown 信号
+            except asyncio.TimeoutError:
+                pass  # 120s 超时，执行清理
             try:
                 self._clean_all_expired()
             except Exception as e:
