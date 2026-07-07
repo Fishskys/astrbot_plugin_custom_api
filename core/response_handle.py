@@ -82,7 +82,10 @@ async def process_text_response(
             if data_path:
                 text_list = get_nested_value(data, data_path)
             else:
-                text_list = data
+                # 格式化输出json
+                from json import dumps
+
+                text_list = [dumps(data, indent=4, ensure_ascii=False)]
         elif isinstance(data, str):
             text_list = [data.strip()]
         else:
@@ -91,8 +94,8 @@ async def process_text_response(
 
         if text_list:
             for text in text_list:
-                if isinstance(text, str):
-                    yield event.plain_result(text.strip())
+                # if isinstance(text, str):
+                yield event.plain_result(text.strip())
             return
         else:
             yield event.plain_result("⚠️ API返回空文本或提取路径错误")
@@ -183,14 +186,14 @@ async def process_audio_response(
             if audio_url_list:
                 for audio_url in audio_url_list:
                     # 构建语音消息链
-                    chain.append(Comp.Record(url=audio_url))
+                    chain.append(Comp.Record.fromURL(url=audio_url))
                 yield event.chain_result(chain)
             else:
                 yield event.plain_result("⚠️ 提取路径未找到音频URL")
                 return
         elif isinstance(data, str):
             if data.startswith(("http://", "https://")):
-                chain.append(Comp.Record(url=data))
+                chain.append(Comp.Record.fromURL(url=data))
                 yield event.chain_result(chain)
         elif isinstance(data, bytes):
             # 使用 delete=False 避免异步生成器中临时文件提前被删除

@@ -56,8 +56,10 @@ async def call_api(api_config: Dict[str, Any], global_timeout) -> Tuple[Any, str
                         try:
                             # 修复了json返回值被转为文本的bug
                             response_data = await response.json(content_type=None)
+                            logger.info(f"json格式响应，响应内容: \n{response_data}")
                         except json.JSONDecodeError:
                             response_data = await response.text()
+                            logger.info(f"文本格式响应，响应内容: \n{response_data}")
                     else:
                         # 二进制响应：检查文件大小，防止内存溢出
                         content_length = response.headers.get("Content-Length")
@@ -72,6 +74,7 @@ async def call_api(api_config: Dict[str, Any], global_timeout) -> Tuple[Any, str
                                 )
                                 return None, content_type, media_type
                         response_data = await response.read()
+                        logger.info(f"二进制响应")
                 else:
                     logger.error(f"❌ API请求失败，状态码: {response.status}")
 
