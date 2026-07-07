@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>自定义 API 控制台</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo">🔌</div>
+        <div class="brand">
+          <div class="brand-title">自定义 API</div>
+          <div class="brand-subtitle">管理控制台</div>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <div class="nav-item active" data-view="overview">
+          <span class="nav-icon">📊</span>
+          <span>API 总览</span>
+        </div>
+        <div class="nav-item" data-view="config">
+          <span class="nav-icon">⚙️</span>
+          <span>API 配置</span>
+        </div>
+        <div class="nav-item" data-view="stats">
+          <span class="nav-icon">📈</span>
+          <span>调用统计</span>
+        </div>
+      </nav>
+
+      <div class="sidebar-footer">
+        <button class="footer-btn" id="themeToggleBtn">
+          <span>🌓</span> <span>切换主题</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main">
+      <header class="topbar">
+        <h1 id="pageTitle">API 总览</h1>
+        <div class="topbar-actions" id="topbarActions"></div>
+      </header>
+
+      <div class="content" id="content">
+        <div class="loading">加载中...</div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast"></div>
+
+  <!-- Edit/Add Modal -->
+  <div class="modal-overlay" id="editModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="editModalTitle">编辑 API</h3>
+        <button class="modal-close" id="closeEditModal">&times;</button>
+      </div>
+      <form id="editForm">
+        <input type="hidden" id="editIndex" value="-1" />
+        <input type="hidden" id="editType" value="text_type" />
+        <div class="form-row">
+          <div class="form-group">
+            <label>触发命令 <span class="req">*</span></label>
+            <input type="text" id="editApiName" required placeholder="例如: weather" />
+          </div>
+          <div class="form-group">
+            <label>请求方式</label>
+            <select id="editMethod"><option value="GET">GET</option><option value="POST">POST</option></select>
+          </div>
+          <div class="form-group">
+            <label>触发方式</label>
+            <select id="editTriggerType">
+              <option value="global">使用全局设置</option>
+              <option value="direct">直接触发</option>
+              <option value="mention_only">仅@触发</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:12px;">
+          <label>API 地址 <span class="req">*</span>（多个用英文逗号分隔）</label>
+          <input type="text" id="editApiUrl" required placeholder="https://api.example.com/endpoint" style="width:100%;" />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>超时（秒，0=全局）</label>
+            <input type="number" id="editTimeout" value="0" min="0" max="120" />
+          </div>
+          <div class="form-group">
+            <label>频率限制（次/分钟，0=全局）</label>
+            <input type="number" id="editRateLimit" value="0" min="0" max="999" />
+          </div>
+          <div class="form-group">
+            <label>数据提取路径（dpath）</label>
+            <input type="text" id="editDataPath" placeholder="例如: data.items.0.url" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>请求参数（JSON，空值作为占位）</label>
+            <textarea id="editParams" rows="2"></textarea>
+          </div>
+          <div class="form-group">
+            <label>请求头（JSON）</label>
+            <textarea id="editHeaders" rows="2"></textarea>
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:12px;">
+          <label>请求体（JSON，仅 POST）</label>
+          <textarea id="editBody" rows="2"></textarea>
+        </div>
+        <div style="display:flex;gap:10px;">
+          <button type="submit" class="btn btn-primary" id="submitEditBtn">保存</button>
+          <button type="button" class="btn btn-muted" id="cancelEditBtn">取消</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Detail Modal -->
+  <div class="modal-overlay" id="detailModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>API 详情</h3>
+        <button class="modal-close" id="closeDetailModal">&times;</button>
+      </div>
+      <div id="detailContent"></div>
+    </div>
+  </div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

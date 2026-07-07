@@ -20,6 +20,7 @@ from .core.response_handle import (
 )
 from .core.client import call_api
 from .core.params import params_handle
+from .core.page_api import PageAPI
 
 
 @register(
@@ -40,6 +41,9 @@ class CustomAPIManager(Star):
             Path(get_astrbot_data_path()) / "plugin_data" / self.name
         )
         os.makedirs(self.plugin_data_path, exist_ok=True)
+        # 注册 Pages Web API（逻辑在 core/page_api.py）
+        self.page_api = PageAPI(self)
+        self.page_api.register()
         # 媒体类型映射
         self.media_type_handlers = {
             "text": process_text_response,
@@ -128,6 +132,8 @@ class CustomAPIManager(Star):
             rate_limit = self.config.get("global_rate_limit", 0)
 
         return self.rate_limiter._rate_limit(user_id, api_key, rate_limit)
+
+    # ── 聊天命令处理 ──────────────────────────────────────────────
 
     @filter.command("apihelp", alias={"api帮助", "APIHELP"})
     async def api_help(self, event: AstrMessageEvent):
