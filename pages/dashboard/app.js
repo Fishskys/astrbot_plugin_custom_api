@@ -89,8 +89,8 @@ function renderOverview(apis) {
         const urls = Array.isArray(api.api_url) ? api.api_url : [api.api_url].filter(Boolean);
         html += `<div class="api-card">
           <div class="cmd">/${api.api_name || '-'}</div>
-          <div class="meta-row"><span class="badge ${t.badge}">${t.label}</span> <span class="label">触发方式</span> ${TRIGGER[api.trigger_type] || "全局"}</div>
-          <div class="meta-row"><span class="label">请求</span> ${api.method || 'GET'} <span class="label">超时</span> ${api.timeout || '默认'}s <span class="label">频率</span> ${api.api_rate_limit || '继承全局'}/min</div>
+          <div class="meta-row"><span class="badge ${t.badge}">${t.label}</span><span class="meta-item"><span class="label">触发方式</span><span class="val">${TRIGGER[api.trigger_type] || "全局"}</span></span></div>
+          <div class="meta-row"><span class="meta-item"><span class="label">请求</span><span class="val">${api.method || 'GET'}</span></span><span class="meta-item"><span class="label">超时</span><span class="val">${api.timeout ? api.timeout + 's' : '默认'}</span></span><span class="meta-item"><span class="label">频率</span><span class="val">${api.api_rate_limit ? api.api_rate_limit + '/min' : '全局'}</span></span></div>
           <div class="url-list">${urls.map(u => `<span class="url-tag" title="${esc(u)}">${esc(u)}</span>`).join('') || '<span style="font-size:0.75rem;color:var(--text-secondary)">未配置URL</span>'}</div>
         </div>`;
       }
