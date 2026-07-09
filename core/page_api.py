@@ -1,6 +1,5 @@
 import json
-import os
-from collections import defaultdict
+import time
 from pathlib import Path
 from typing import Any, Dict
 
@@ -38,7 +37,11 @@ class PageAPI:
                 "保存全局配置",
             ),
             (f"/{self.name}/config/export", self._config_export, ["GET"], "导出配置"),
-            (f"/{self.name}/stats/data", self._stats_data, ["GET"], "调用统计数据"),
+            (f"/{self.name}/config/import", self._config_import, ["POST"], "导入配置"),
+            (f"/{self.name}/stats/summary", self._stats_summary, ["GET"], "统计摘要"),
+            (f"/{self.name}/stats/top-apis", self._stats_top_apis, ["GET"], "热门 API 排行"),
+            (f"/{self.name}/stats/top-users", self._stats_top_users, ["GET"], "用户调用排行"),
+            (f"/{self.name}/stats/trend", self._stats_trend, ["GET"], "月度趋势"),
         ]
 
         for route, handler, methods, desc in routes:
@@ -251,24 +254,84 @@ class PageAPI:
             content_type="application/json",
         )
 
-    async def _stats_data(self):
-        """返回调用统计数据（基于频率限制器的 60s 滑动窗口）。"""
-        total_calls = 0
-        api_stats: Dict[str, int] = defaultdict(int)
-        user_stats: Dict[str, int] = defaultdict(int)
+    async def _config_import(self):
+        """从 JSON 导入 API 配置，会覆盖现有配置。"""
+        try:
+            files = await request.files()
+            file_field = files.get("file") if files else None
+            if not file_field:
+                return error_response("未上传文件", status_code=400)
+            content = file_field.read()
+            if isinstance(content, bytes):
+                content = content.decode("utf-8")
+            imported = json.loads(content)
+            if not isinstance(imported, list):
+                return error_response("文件内容必须是 API 配置数组", status_code=400)
+            for item in imported:
+                if not isinstance(item, dict):
+                    return error_response("数组每项必须是对象", status_code=400)
+                err = self._validate_config_item(item)
+                if err:
+                    return err
+            self.plugin.config["custom_apis"] = imported
+            self._save_config()
+            self._rebuild_maps()
+            logger.info(f"[PageAPI] 导入配置，共 {len(imported)} 个 API")
+            return json_response({"ok": True, "count": len(imported)})
+        except json.JSONDecodeError as e:
+            return error_response(f"JSON 解析失败: {e}", status_code=400)
+        except Exception as e:
+            logger.error(f"[PageAPI] 导入配置失败: {e}")
+            return error_response(f"导入失败: {e}", status_code=500)
 
-        for api_key, users in self.plugin.rate_limiter.api_calls.items():
-            for user_id, timestamps in users.items():
-                count = len(timestamps)
-                if count > 0:
-                    total_calls += count
-                    api_stats[api_key] += count
-                    user_stats[user_id] += count
+    async def _stats_summary(self):
+        """返回 Dashboard 概览统计。"""
+        if not hasattr(self.plugin, "stats_tracker") or self.plugin.stats_tracker is None:
+            return json_response({
+                "total_calls": 0, "total_users": 0,
+                "today_calls": 0, "today_users": 0,
+                "top_apis": [], "api_trend": [], "user_trend": [],
+            })
+        return json_response(self.plugin.stats_tracker.get_summary())
 
-        return json_response(
-            {
-                "total_calls": total_calls,
-                "api_stats": dict(api_stats),
-                "user_stats": dict(user_stats),
+    async def _stats_top_apis(self):
+        """返回热门 API 排行榜。"""
+        if not hasattr(self.plugin, "stats_tracker") or self.plugin.stats_tracker is None:
+            return json_response({"range": "today", "items": []})
+        range_type = request.query.get("range", "today") if hasattr(request, "query") else "today"
+        if range_type not in ("today", "month", "total"):
+            range_type = "today"
+        items = self.plugin.stats_tracker.get_top_apis(range_type, limit=10)
+        return json_response({"range": range_type, "items": items})
+
+    async def _stats_top_users(self):
+        """返回用户调用次数排行榜。"""
+        if not hasattr(self.plugin, "stats_tracker") or self.plugin.stats_tracker is None:
+            return json_response({"range": "today", "items": []})
+        range_type = request.query.get("range", "today") if hasattr(request, "query") else "today"
+        if range_type not in ("today", "month", "total"):
+            range_type = "today"
+        items = self.plugin.stats_tracker.get_top_users(range_type, limit=10)
+        return json_response({"range": range_type, "items": items})
+
+    async def _stats_trend(self):
+        """返回指定月份的趋势数据。"""
+        if not hasattr(self.plugin, "stats_tracker") or self.plugin.stats_tracker is None:
+            return json_response({"type": "calls", "month": time.strftime("%Y-%m"), "data": []})
+        trend_type = request.query.get("type", "calls") if hasattr(request, "query") else "calls"
+        month = request.query.get("month", time.strftime("%Y-%m")) if hasattr(request, "query") else time.strftime("%Y-%m")
+        if trend_type not in ("calls", "users"):
+            trend_type = "calls"
+        if not month or len(month) != 7 or "-" not in month:
+            month = time.strftime("%Y-%m")
+        data = self.plugin.stats_tracker.get_trend(trend_type, month)
+        return json_response({
+            "type": trend_type,
+            "month": month,
+            "data": data,
+            "debug": {
+                "query_type": request.query.get("type") if hasattr(request, "query") else None,
+                "query_month": request.query.get("month") if hasattr(request, "query") else None,
+                "row_count": len(data),
             }
-        )
+        })

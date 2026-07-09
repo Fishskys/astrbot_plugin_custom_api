@@ -1,2 +1,3 @@
 aiohttp>=3.9.1
 dpath>=2.2.0
+sqlite

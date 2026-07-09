@@ -21,6 +21,7 @@ from .core.response_handle import (
 from .core.client import call_api
 from .core.params import params_handle
 from .core.page_api import PageAPI
+from .core.stats_tracker import StatsTracker
 
 
 @register(
@@ -41,6 +42,8 @@ class CustomAPIManager(Star):
             Path(get_astrbot_data_path()) / "plugin_data" / self.name
         )
         os.makedirs(self.plugin_data_path, exist_ok=True)
+        # 调用统计
+        self.stats_tracker = StatsTracker(self.plugin_data_path)
         # 注册 Pages Web API（逻辑在 core/page_api.py）
         self.page_api = PageAPI(self)
         self.page_api.register()
@@ -205,6 +208,11 @@ class CustomAPIManager(Star):
             yield event.plain_result("⚠️ 调用过于频繁，请稍后再试")
             event.stop_event()
             return
+        # 记录调用统计
+        user_id = event.get_sender_id()
+        api_config_for_stats = selected_api.get("config", {})
+        api_name = f"{api_config_for_stats.get('api_name', '')}_{selected_api.get('type', '')}"
+        self.stats_tracker.record(api_name, user_id)
         # 参数处理
         err_msg, api_config = params_handle(
             command=command, parts=parts, selected_api=selected_api

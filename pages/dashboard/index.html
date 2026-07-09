@@ -27,10 +27,6 @@
           <span class="nav-icon">⚙️</span>
           <span>API 配置</span>
         </div>
-        <div class="nav-item" data-view="stats">
-          <span class="nav-icon">📈</span>
-          <span>调用统计</span>
-        </div>
       </nav>
 
       <div class="sidebar-footer">
@@ -53,8 +49,9 @@
     </main>
   </div>
 
-  <!-- Toast -->
+  <!-- Toast + Chart Tooltip -->
   <div id="toast" class="toast"></div>
+  <div id="chartTooltip" class="chart-tooltip"></div>
 
   <!-- Edit/Add Modal -->
   <div class="modal-overlay" id="editModal">
@@ -134,6 +131,9 @@
       <div id="detailContent"></div>
     </div>
   </div>
+
+  <!-- Hidden file input for import -->
+  <input type="file" id="importFileInput" accept="application/json" style="display:none;" />
 
   <script type="module" src="./app.js"></script>
 </body>
