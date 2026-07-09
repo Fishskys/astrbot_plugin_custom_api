@@ -126,6 +126,7 @@ class PageAPI:
                     "global_default_timeout", 15
                 ),
                 "global_rate_limit": self.plugin.config.get("global_rate_limit", 0),
+                "global_retry_count": self.plugin.config.get("global_retry_count", 0),
                 "default_trigger_type": self.plugin.config.get(
                     "default_trigger_type", "mention_only"
                 ),
@@ -140,6 +141,7 @@ class PageAPI:
 
         timeout = payload.get("global_default_timeout")
         rate_limit = payload.get("global_rate_limit")
+        retry_count = payload.get("global_retry_count")
         trigger_type = payload.get("default_trigger_type")
 
         if timeout is not None:
@@ -156,6 +158,14 @@ class PageAPI:
                     "global_rate_limit 必须是非负整数", status_code=400
                 )
             self.plugin.config["global_rate_limit"] = int(rate_limit)
+
+        if retry_count is not None:
+            if not isinstance(retry_count, (int, float)) or retry_count < 0 or retry_count > 10:
+                return error_response(
+                    "global_retry_count 必须是 0-10 的整数", status_code=400
+                )
+            self.plugin.config["global_retry_count"] = int(retry_count)
+            self.plugin.global_retry_count = int(retry_count)
 
         if trigger_type is not None:
             if trigger_type not in ("direct", "mention_only"):

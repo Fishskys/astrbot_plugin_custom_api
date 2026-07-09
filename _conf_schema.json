@@ -11,6 +11,12 @@
     "hint": "单个API未配置超时时间时，使用此全局值，建议10-30秒",
     "default": 15
   },
+  "global_retry_count": {
+    "description": "请求失败时的重试次数",
+    "type": "int",
+    "hint": "仅对网络超时/连接错误重试，HTTP 4xx/5xx 不重试。0 表示不重试",
+    "default": 0
+  },
   "default_trigger_type": {
     "description": "默认触发方式",
     "type": "string",

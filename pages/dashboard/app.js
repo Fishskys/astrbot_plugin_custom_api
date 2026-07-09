@@ -384,6 +384,9 @@ function renderConfig() {
       <div class="form-row">
         <div class="form-group"><label>全局超时时间（秒）</label><input type="number" id="globalTimeout" value="${globalConfig.global_default_timeout || 15}" min="1" max="120"/></div>
         <div class="form-group"><label>全局频率限制（次/分钟，0=不限）</label><input type="number" id="globalRateLimit" value="${globalConfig.global_rate_limit || 0}" min="0" max="9999"/></div>
+        <div class="form-group"><label>请求失败重试次数（0=不重试）</label><input type="number" id="globalRetryCount" value="${globalConfig.global_retry_count || 0}" min="0" max="10"/></div>
+      </div>
+      <div class="form-row">
         <div class="form-group"><label>默认触发方式</label><select id="defaultTriggerType"><option value="direct" ${globalConfig.default_trigger_type==='direct'?'selected':''}>直接对话触发</option><option value="mention_only" ${globalConfig.default_trigger_type==='mention_only'?'selected':''}>仅@机器人触发</option></select></div>
       </div>
     </div>
@@ -436,6 +439,7 @@ async function saveGlobal() {
     await bridge.apiPost("config/save-global", {
       global_default_timeout: parseInt($("globalTimeout").value) || 15,
       global_rate_limit: parseInt($("globalRateLimit").value) || 0,
+      global_retry_count: parseInt($("globalRetryCount").value) || 0,
       default_trigger_type: $("defaultTriggerType").value,
     });
     toast("全局配置已保存");

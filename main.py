@@ -35,6 +35,7 @@ class CustomAPIManager(Star):
         super().__init__(context)
         self.config = config
         self.global_timeout = config.get("global_default_timeout", 15)
+        self.global_retry_count = config.get("global_retry_count", 0)
         self.rate_limiter = RateLimiter()
         self.command_list = self._build_command_list()
         self.api_map = self._build_api_map()
@@ -228,7 +229,9 @@ class CustomAPIManager(Star):
         try:
             # 调用API并获取响应
             response_data, content_type, media_type = await call_api(
-                api_config, global_timeout=self.global_timeout
+                api_config,
+                global_timeout=self.global_timeout,
+                retry_count=self.global_retry_count,
             )
             if response_data is None:
                 yield event.plain_result(f"⚠️ 未获取到有效内容，具体请查看日志")
