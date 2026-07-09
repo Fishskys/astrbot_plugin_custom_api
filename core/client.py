@@ -21,10 +21,10 @@ async def _do_request(
     api_url: str,
     api_config: Dict[str, Any],
     req_kwargs: Dict[str, Any],
-) -> Tuple[Any, str, str]:
+) -> Tuple[Any, str, str, int]:
     """执行单次 HTTP 请求并解析响应。
 
-    返回: (响应数据, Content-Type 前缀, 媒体类型)
+    返回: (响应数据, Content-Type 前缀, 媒体类型, HTTP 状态码)
     """
     if method == "GET":
         req_func = session.get
@@ -53,7 +53,7 @@ async def _do_request(
                         logger.warning(
                             f"⚠️ 响应大小 {content_length} Bytes 超过限制 {max_size} MB"
                         )
-                        return None, content_type, media_type
+                        return None, content_type, media_type, response.status
                 response_data = await response.read()
                 logger.info("二进制响应")
         else:
@@ -62,14 +62,14 @@ async def _do_request(
             content_type = ""
             media_type = ""
 
-        return response_data, content_type, media_type
+        return response_data, content_type, media_type, response.status
 
 
 async def call_api(
     api_config: Dict[str, Any],
     global_timeout: int,
     retry_count: int = 0,
-) -> Tuple[Any, str, str]:
+) -> Tuple[Any, str, str, int]:
     """调用 API 并返回结果（含指数退避重试）。
 
     参数:
@@ -77,14 +77,15 @@ async def call_api(
         global_timeout: 全局超时秒数
         retry_count:  最大重试次数（0 = 不重试）
     返回:
-        (响应数据, Content-Type 前缀, 媒体类型)
+        (响应数据, Content-Type 前缀, 媒体类型, HTTP 状态码)
     保证:
-        - 任何情况下都返回稳定的三元组
+        - 任何情况下都返回稳定的四元组
         - 仅网络超时/连接错误重试；HTTP 4xx/5xx 不重试
     """
     response_data = None
     content_type = ""
     media_type = ""
+    status_code = 0
 
     api_url = api_config.get("api_url", "")
     method = api_config.get("method", "GET").upper()
@@ -109,10 +110,10 @@ async def call_api(
                 result = await _do_request(
                     session, method, api_url, api_config, req_kwargs
                 )
-                response_data, content_type, media_type = result
+                response_data, content_type, media_type, status_code = result
 
                 # HTTP 层面成功了（200 或 非 200 都算请求完成），直接返回
-                return response_data, content_type, media_type
+                return response_data, content_type, media_type, status_code
 
         except _RETRYABLE_EXCEPTIONS as e:
             last_error = str(e)
@@ -132,4 +133,4 @@ async def call_api(
             # 不可重试的错误直接退出
             break
 
-    return response_data, content_type, media_type
+    return response_data, content_type, media_type, status_code

@@ -1,3 +1,4 @@
+import base64
 import json
 import time
 from pathlib import Path
@@ -6,6 +7,8 @@ from typing import Any, Dict
 from astrbot.api import logger
 from astrbot.api.web import error_response, file_response, json_response, request
 from astrbot.core.star.config import update_config
+
+from .client import call_api
 
 
 class PageAPI:
@@ -38,6 +41,7 @@ class PageAPI:
             ),
             (f"/{self.name}/config/export", self._config_export, ["GET"], "导出配置"),
             (f"/{self.name}/config/import", self._config_import, ["POST"], "导入配置"),
+            (f"/{self.name}/config/test", self._config_test, ["POST"], "API 测试请求"),
             (f"/{self.name}/stats/summary", self._stats_summary, ["GET"], "统计摘要"),
             (f"/{self.name}/stats/top-apis", self._stats_top_apis, ["GET"], "热门 API 排行"),
             (f"/{self.name}/stats/top-users", self._stats_top_users, ["GET"], "用户调用排行"),
@@ -293,6 +297,62 @@ class PageAPI:
         except Exception as e:
             logger.error(f"[PageAPI] 导入配置失败: {e}")
             return error_response(f"导入失败: {e}", status_code=500)
+
+    async def _config_test(self):
+        """实际发起一次 API 测试请求，不保存配置。"""
+        try:
+            payload = await request.json(default={})
+            if not isinstance(payload, dict):
+                return error_response("请求体必须为 JSON 对象", status_code=400)
+
+            config_item = payload.get("config", {})
+            if not isinstance(config_item, dict):
+                return error_response("config 必须为对象", status_code=400)
+
+            api_url = config_item.get("api_url")
+            if not api_url or (isinstance(api_url, list) and not any(api_url)):
+                return error_response("api_url 不能为空", status_code=400)
+
+            method = config_item.get("method", "GET").upper()
+            if method not in ("GET", "POST"):
+                return error_response("method 必须为 GET 或 POST", status_code=400)
+
+            # 统一成列表，但测试时只取第一个地址
+            urls = api_url if isinstance(api_url, list) else [api_url]
+            urls = [u for u in urls if u]
+            if not urls:
+                return error_response("api_url 不能为空", status_code=400)
+
+            test_config = {
+                **config_item,
+                "api_url": urls[0],  # 测试时只使用第一个 URL
+                "method": method,
+                "params": config_item.get("params", {}) or {},
+                "headers": config_item.get("headers", {}) or {},
+                "body": config_item.get("body", {}) or {},
+                "timeout": config_item.get("timeout", 0),
+                "max_size": config_item.get("max_size", 0),
+            }
+
+            response_data, content_type, media_type, status_code = await call_api(
+                test_config,
+                global_timeout=self.plugin.global_timeout,
+                retry_count=self.plugin.global_retry_count,
+            )
+
+            if media_type == "img" and isinstance(response_data, bytes):
+                b64 = base64.b64encode(response_data).decode("utf-8")
+                response_data = f"data:{content_type or 'image/png'};base64,{b64}"
+
+            return json_response({
+                "http_code": status_code,
+                "content_type": content_type,
+                "media_type": media_type,
+                "response_data": response_data,
+            })
+        except Exception as e:
+            logger.error(f"[PageAPI] API 测试失败: {e}")
+            return error_response(f"测试失败: {e}", status_code=500)
 
     async def _stats_summary(self):
         """返回 Dashboard 概览统计。"""

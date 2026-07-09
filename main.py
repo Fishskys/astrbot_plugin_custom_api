@@ -228,7 +228,7 @@ class CustomAPIManager(Star):
 
         try:
             # 调用API并获取响应
-            response_data, content_type, media_type = await call_api(
+            response_data, content_type, media_type, _ = await call_api(
                 api_config,
                 global_timeout=self.global_timeout,
                 retry_count=self.global_retry_count,

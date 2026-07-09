@@ -17,6 +17,12 @@ let globalConfig = {};
 let currentView = "overview";
 let overviewEventsBound = false;
 
+// Test 视图状态
+const testState = {
+  editIndex: -1,  // -1 表示新增，>=0 表示编辑
+  config: null,   // 预填配置
+};
+
 // Overview 视图状态：切换时保留用户选择
 const currentMonth = () => {
   const d = new Date();
@@ -45,6 +51,10 @@ navItems.forEach(item => {
     navItems.forEach(n => n.classList.remove("active"));
     item.classList.add("active");
     currentView = item.dataset.view;
+    if (currentView === "test") {
+      testState.editIndex = -1;
+      testState.config = null;
+    }
     loadView(currentView);
   });
 });
@@ -52,6 +62,7 @@ navItems.forEach(item => {
 async function loadView(view) {
   if (view === "overview") await loadOverview();
   else if (view === "config") await loadConfig();
+  else if (view === "test") loadTest(testState.config, testState.editIndex);
 }
 
 // ── Theme toggle ──
@@ -361,6 +372,387 @@ function attachChartTooltip(chartId) {
   });
 }
 
+// ── Test ──
+function loadTest(preloadConfig = null, editIndex = -1) {
+  $("pageTitle").textContent = "API 测试";
+  $("topbarActions").innerHTML = "";
+  testState.editIndex = editIndex;
+  testState.config = preloadConfig;
+  renderTest();
+  attachTestEvents();
+}
+
+function renderTest() {
+  const cfg = testState.config || {};
+  const typeKey = cfg.__template_key || "text_type";
+  const method = cfg.method || "GET";
+  const urls = Array.isArray(cfg.api_url) ? cfg.api_url.join(", ") : (cfg.api_url || "");
+  const params = cfg.params || {};
+  const headers = cfg.headers || {};
+  const body = cfg.body && Object.keys(cfg.body).length ? JSON.stringify(cfg.body, null, 2) : "";
+
+  const typeOptions = TYPE.map(t => `<option value="${t.key}" ${typeKey === t.key ? 'selected' : ''}>${t.label}</option>`).join("");
+
+  $("content").innerHTML = `<div class="section test-page">
+    <div class="test-topbar">
+      <div class="form-group narrow-field"><label>触发命令 <span class="req">*</span></label><input type="text" id="testApiName" value="${esc(cfg.api_name || "")}" placeholder="例如: weather" /></div>
+      <div class="form-group narrow-field"><label>API 类型</label><select id="testType">${typeOptions}</select></div>
+      <div class="form-group narrow-field"><label>请求方法</label><select id="testMethod"><option value="GET" ${method === "GET" ? 'selected' : ''}>GET</option><option value="POST" ${method === "POST" ? 'selected' : ''}>POST</option></select></div>
+      <div class="form-group wide-field"><label>API 地址 <span class="req">*</span></label><input type="text" id="testApiUrl" value="${esc(urls)}" placeholder="https://api.example.com/endpoint" /></div>
+      <div class="test-actions-inline">
+        <button class="btn btn-success" id="runTestBtn">发送</button>
+        <button class="btn btn-danger" id="clearTestBtn">清除</button>
+        <button class="btn btn-primary" id="saveTestBtn">保存</button>
+      </div>
+    </div>
+    <div class="test-main">
+    <div class="test-form">
+      <div class="form-row">
+        <div class="form-group"><label>超时（秒，0=全局）</label><input type="number" id="testTimeout" value="${cfg.timeout || 0}" min="0" max="120" /></div>
+        <div class="form-group"><label>频率限制（次/分钟，0=全局）</label><input type="number" id="testRateLimit" value="${cfg.api_rate_limit || 0}" min="0" max="999" /></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>触发方式</label><select id="testTriggerType">
+          <option value="global" ${(cfg.trigger_type || "global") === "global" ? 'selected' : ''}>使用全局设置</option>
+          <option value="direct" ${cfg.trigger_type === "direct" ? 'selected' : ''}>直接触发</option>
+          <option value="mention_only" ${cfg.trigger_type === "mention_only" ? 'selected' : ''}>仅@触发</option>
+        </select></div>
+        <div class="form-group" style="flex:2;"><label>数据提取路径（dpath）</label><input type="text" id="testDataPath" value="${esc(cfg.data_path || "")}" placeholder="例如: data.items.0.url" /></div>
+      </div>
+      ${renderKVSection("testParams", "请求参数", params)}
+      ${renderKVSection("testHeaders", "请求头", headers)}
+      <div class="form-group" style="margin-top:12px;">
+        <label>请求体（JSON，仅 POST）</label>
+        <textarea id="testBody" rows="8" placeholder="{}">${esc(body)}</textarea>
+      </div>
+    </div>
+    <div class="test-response">
+      <div class="response-header">
+        <span class="status">状态码：<b id="respStatus">-</b></span>
+        <div class="response-tools">
+          <input type="text" id="findInput" placeholder="Find..." />
+          <button class="btn btn-sm btn-primary" id="findPrevBtn" title="上一个">▲</button>
+          <button class="btn btn-sm btn-primary" id="findNextBtn" title="下一个">▼</button>
+          <button class="btn btn-sm btn-info" id="copyRespBtn">复制</button>
+        </div>
+      </div>
+      <div class="response-body-wrap">
+        <pre id="respBody" class="response-body">点击「发送」发送请求...</pre>
+        <div class="image-preview">
+          <div class="image-preview-header">
+            <input type="text" id="previewUrl" class="preview-url" placeholder="经过 dpath 提取的 URL" />
+            <button class="btn btn-primary btn-sm" id="showPreviewBtn">显示</button>
+          </div>
+          <div class="image-preview-body">
+            <img id="previewImg" src="" alt="预览" style="display:none; cursor:pointer;" title="点击查看原图" />
+            <div class="preview-placeholder">点击「显示」渲染图片</div>
+            <div class="image-preview-tools" id="previewTools" style="display:none; margin-top:10px;">
+              <button class="btn btn-sm btn-muted" id="downloadImgBtn">下载原图</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    </div>
+  </div>`;
+
+  renderKVList("testParams", params);
+  renderKVList("testHeaders", headers);
+  attachKVEvents("testParams");
+  attachKVEvents("testHeaders");
+}
+
+function renderKVSection(id, title, items) {
+  return `<div class="kv-section">
+    <div class="kv-title"><span>${title}</span> <button class="btn btn-sm btn-primary add-kv-btn" data-target="${id}">+ 添加</button></div>
+    <div class="kv-list" id="${id}"></div>
+  </div>`;
+}
+
+function renderKVList(containerId, items) {
+  const container = $(containerId);
+  if (!container) return;
+  const arr = Object.entries(items || {});
+  if (!arr.length) arr.push(["", ""]);
+  container.innerHTML = arr.map(([k, v]) => `
+    <div class="kv-row">
+      <input type="text" class="kv-key" placeholder="key" value="${esc(k)}" />
+      <input type="text" class="kv-val" placeholder="value" value="${esc(typeof v === 'object' ? JSON.stringify(v) : String(v))}" />
+      <button class="btn btn-sm btn-danger remove-kv-btn">-</button>
+    </div>
+  `).join("");
+}
+
+function attachKVEvents(containerId) {
+  const container = $(containerId);
+  const addBtn = document.querySelector(`.add-kv-btn[data-target="${containerId}"]`);
+  if (!container) return;
+
+  container.addEventListener("click", (e) => {
+    if (e.target.closest(".remove-kv-btn")) {
+      const row = e.target.closest(".kv-row");
+      if (row) row.remove();
+    }
+  });
+
+  if (addBtn) {
+    addBtn.addEventListener("click", () => addKVRow(container));
+  }
+}
+
+function addKVRow(container) {
+  const div = document.createElement("div");
+  div.className = "kv-row";
+  div.innerHTML = `<input type="text" class="kv-key" placeholder="key" /><input type="text" class="kv-val" placeholder="value" /><button class="btn btn-sm btn-danger remove-kv-btn">-</button>`;
+  container.appendChild(div);
+}
+
+function collectKVData(containerId) {
+  const container = $(containerId);
+  if (!container) return {};
+  const data = {};
+  container.querySelectorAll(".kv-row").forEach(row => {
+    const k = row.querySelector(".kv-key")?.value.trim();
+    const v = row.querySelector(".kv-val")?.value.trim();
+    if (k) data[k] = v;
+  });
+  return data;
+}
+
+function collectTestConfig() {
+  const urls = $("testApiUrl").value.split(",").map(s => s.trim()).filter(Boolean);
+  let body = {};
+  const bodyRaw = $("testBody").value.trim();
+  if (bodyRaw) {
+    try { body = JSON.parse(bodyRaw); }
+    catch (e) { toast("请求体 JSON 格式错误", "error"); throw e; }
+  }
+  const baseConfig = {
+    __template_key: $("testType").value,
+    api_name: $("testApiName").value.trim(),
+    api_url: urls,
+    method: $("testMethod").value,
+    timeout: parseInt($("testTimeout").value) || 0,
+    api_rate_limit: parseInt($("testRateLimit").value) || 0,
+    trigger_type: $("testTriggerType").value,
+    data_path: $("testDataPath").value.trim(),
+    params: collectKVData("testParams"),
+    headers: collectKVData("testHeaders"),
+    body: body,
+  };
+  // 编辑时保留原配置中的类型专属字段（如 auto_preview、max_size 等）
+  return testState.config ? { ...testState.config, ...baseConfig } : baseConfig;
+}
+
+function formatResponse(data) {
+  if (data === null || data === undefined) return "(无数据)";
+  if (typeof data === "string") return data;
+  try { return JSON.stringify(data, null, 2); }
+  catch (e) { return String(data); }
+}
+
+function attachTestEvents() {
+  $("clearTestBtn")?.addEventListener("click", () => {
+    testState.editIndex = -1;
+    testState.config = null;
+    renderTest();
+  });
+
+  $("runTestBtn")?.addEventListener("click", async () => {
+    const config = collectTestConfig();
+    if (!config.api_name || !config.api_url.length) {
+      toast("触发命令和 API 地址不能为空", "error");
+      return;
+    }
+    try {
+      $("runTestBtn").disabled = true;
+      $("respStatus").textContent = "-";
+      $("respBody").textContent = "发送请求中...";
+      const res = await bridge.apiPost("config/test", { config });
+      $("respStatus").textContent = res.http_code ?? "-";
+      const pre = $("respBody");
+      const placeholder = document.querySelector(".preview-placeholder");
+      const img = $("previewImg");
+      const previewUrl = $("previewUrl");
+
+      const isBinaryImage = res.media_type === "img" || (res.content_type && res.content_type.startsWith("image/"));
+      if (isBinaryImage) {
+        pre.textContent = "(二进制图片响应，已渲染在下方预览框)";
+        pre.dataset.originalText = pre.textContent;
+        const imageUrl = typeof res.response_data === "string" && res.response_data.startsWith("data:") ? res.response_data : String(res.response_data || "");
+        img.src = imageUrl;
+        img.style.display = "block";
+        if (placeholder) placeholder.style.display = "none";
+        const tools = $("previewTools");
+        if (tools) tools.style.display = "flex";
+      } else {
+        const text = formatResponse(res.response_data);
+        pre.textContent = text;
+        pre.dataset.originalText = text;
+        img.src = "";
+        img.style.display = "none";
+        if (placeholder) placeholder.style.display = "flex";
+        const tools2 = $("previewTools");
+        if (tools2) tools2.style.display = "none";
+
+        // 自动按 data_path 提取内容填入单行文本框
+        const dataPath = $("testDataPath").value.trim();
+        if (dataPath) {
+          let data = null;
+          try { data = JSON.parse(text); } catch (e) {}
+          if (data !== null) {
+            const extracted = extractByPath(data, dataPath);
+            if (extracted !== undefined && extracted !== null && extracted !== "") {
+              if (previewUrl) previewUrl.value = String(extracted);
+            }
+          }
+        }
+      }
+      pre.dataset.findIndex = "-1";
+      delete pre.dataset.findTerm;
+    } catch (e) {
+      $("respStatus").textContent = "-";
+      $("respBody").textContent = "测试失败: " + (e.message || e);
+    } finally {
+      $("runTestBtn").disabled = false;
+    }
+  });
+
+  $("saveTestBtn")?.addEventListener("click", async () => {
+    const config = collectTestConfig();
+    if (!config.api_name || !config.api_url.length) {
+      toast("触发命令和 API 地址不能为空", "error");
+      return;
+    }
+    try {
+      $("saveTestBtn").disabled = true;
+      if (testState.editIndex >= 0) {
+        await bridge.apiPost("config/update", { index: testState.editIndex, config });
+        toast("API 已更新");
+      } else {
+        await bridge.apiPost("config/add", { config });
+        toast("API 已创建");
+      }
+      await loadConfig();
+    } catch (e) {
+      toast("保存失败: " + (e.message || e), "error");
+    } finally {
+      $("saveTestBtn").disabled = false;
+    }
+  });
+
+  $("copyRespBtn")?.addEventListener("click", () => {
+    const text = $("respBody").textContent;
+    navigator.clipboard.writeText(text).then(
+      () => toast("已复制到剪贴板"),
+      () => toast("复制失败", "error")
+    );
+  });
+
+  $("findNextBtn")?.addEventListener("click", () => findInResponse("next"));
+  $("findPrevBtn")?.addEventListener("click", () => findInResponse("prev"));
+  $("findInput")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") findInResponse("next");
+  });
+
+  $("showPreviewBtn")?.addEventListener("click", () => {
+    const urlStr = $("previewUrl").value.trim();
+    if (!urlStr) {
+      toast("请输入图片 URL", "error");
+      return;
+    }
+    const img = $("previewImg");
+    const placeholder = document.querySelector(".preview-placeholder");
+    const tools = $("previewTools");
+    img.src = urlStr;
+    img.style.display = "block";
+    if (placeholder) placeholder.style.display = "none";
+    if (tools) tools.style.display = "flex";
+  });
+
+  // 点击图片放大（内嵌 lightbox）
+  $("previewImg")?.addEventListener("click", () => {
+    const src = $("previewImg").src;
+    if (!src) return;
+    $("lightboxImg").src = src;
+    $("imgLightbox").classList.add("open");
+  });
+
+  // 下载图片
+  $("downloadImgBtn")?.addEventListener("click", () => {
+    const src = $("previewImg").src;
+    if (!src) return;
+    const a = document.createElement("a");
+    a.href = src;
+    a.download = "api_response." + (src.startsWith("data:") ? src.substring(5, src.indexOf(";")).replace("image/", "") : "png");
+    a.click();
+  });
+
+  // lightbox 关闭
+  $("closeLightbox")?.addEventListener("click", () => $("imgLightbox").classList.remove("open"));
+  $("imgLightbox")?.addEventListener("click", (e) => {
+    if (e.target === $("imgLightbox")) $("imgLightbox").classList.remove("open");
+  });
+}
+
+function extractByPath(obj, path) {
+  if (!path || obj === null || obj === undefined) return undefined;
+  const keys = path.split(".");
+  let current = obj;
+  for (const key of keys) {
+    if (current === null || current === undefined) return undefined;
+    if (Array.isArray(current)) {
+      const idx = parseInt(key);
+      if (!isNaN(idx) && idx >= 0 && idx < current.length) current = current[idx];
+      else return undefined;
+    } else {
+      current = current[key];
+    }
+  }
+  return current;
+}
+
+function findInResponse(direction) {
+  const pre = $("respBody");
+  const input = $("findInput");
+  if (!pre || !input) return;
+  const term = input.value.trim();
+  if (!term) return;
+
+  let text = pre.textContent;
+  // 如果已有高亮，先恢复原文本
+  if (pre.dataset.originalText) text = pre.dataset.originalText;
+  else pre.dataset.originalText = text;
+
+  const regex = new RegExp(escRegExp(term), "gi");
+  const matches = [...text.matchAll(regex)];
+  if (!matches.length) {
+    toast("未找到匹配内容", "info");
+    return;
+  }
+
+  let current = parseInt(pre.dataset.findIndex || "-1");
+  if (direction === "next") current = (current + 1) % matches.length;
+  else current = (current - 1 + matches.length) % matches.length;
+  pre.dataset.findIndex = String(current);
+
+  let idx = -1;
+  pre.innerHTML = esc(text).replace(regex, (match) => {
+    idx++;
+    const safe = esc(match);
+    return idx === current
+      ? `<span class="find-highlight">${safe}</span>`
+      : `<span class="find-match">${safe}</span>`;
+  });
+
+  const highlight = pre.querySelector(".find-highlight");
+  if (highlight) highlight.scrollIntoView({ block: "center", behavior: "smooth" });
+}
+
+function escRegExp(string) {
+  return string.replace(/[.*+?^${}()|[\]\\\\]/g, "\\$&");
+}
+
 // ── Config ──
 async function loadConfig() {
   $("pageTitle").textContent = "API 配置";
@@ -414,6 +806,7 @@ function renderConfig() {
           <div class="url-list">${urls.map(u => `<span class="url-tag" title="${esc(u)}">${esc(u)}</span>`).join('') || '<span style="font-size:0.75rem;color:var(--text-secondary)">未配置URL</span>'}</div>
           <div class="card-actions">
             <button class="btn btn-sm btn-muted edit-btn" data-idx="${i}">编辑</button>
+            <button class="btn btn-sm btn-success test-btn" data-idx="${i}">测试</button>
             <button class="btn btn-sm btn-danger del-btn" data-idx="${i}">删除</button>
             <button class="btn btn-sm btn-info detail-btn" data-idx="${i}">详情</button>
           </div>
@@ -430,6 +823,7 @@ function renderConfig() {
   document.getElementById("importBtn")?.addEventListener("click", () => $("importFileInput").click());
   document.querySelectorAll(".add-api-btn").forEach(b => b.addEventListener("click", () => openAdd(b.dataset.type)));
   document.querySelectorAll(".edit-btn").forEach(b => b.addEventListener("click", () => openEdit(parseInt(b.dataset.idx))));
+  document.querySelectorAll(".test-btn").forEach(b => b.addEventListener("click", () => openTestFromConfig(parseInt(b.dataset.idx))));
   document.querySelectorAll(".del-btn").forEach(b => b.addEventListener("click", () => deleteApi(parseInt(b.dataset.idx))));
   document.querySelectorAll(".detail-btn").forEach(b => b.addEventListener("click", () => showDetail(parseInt(b.dataset.idx))));
 }
@@ -461,6 +855,15 @@ $("importFileInput").addEventListener("change", async (e) => {
   } catch (err) { toast("导入失败: " + (err.message || err), "error"); }
   e.target.value = "";
 });
+
+function openTestFromConfig(idx) {
+  testState.editIndex = idx;
+  testState.config = idx >= 0 ? { ...allApis[idx] } : null;
+  currentView = "test";
+  navItems.forEach(n => n.classList.remove("active"));
+  document.querySelector('.nav-item[data-view="test"]')?.classList.add("active");
+  loadView("test");
+}
 
 // ── Edit/Add Modal ──
 function openAdd(typeKey) {
