@@ -334,6 +334,7 @@ class PageAPI:
                 "max_size": config_item.get("max_size", 0),
             }
 
+            t0 = time.perf_counter()
             response_data, content_type, media_type, status_code = await call_api(
                 test_config,
                 global_timeout=self.plugin.global_timeout,
@@ -344,11 +345,14 @@ class PageAPI:
                 b64 = base64.b64encode(response_data).decode("utf-8")
                 response_data = f"data:{content_type or 'image/png'};base64,{b64}"
 
+            elapsed_ms = int((time.perf_counter() - t0) * 1000)
+
             return json_response({
                 "http_code": status_code,
                 "content_type": content_type,
                 "media_type": media_type,
                 "response_data": response_data,
+                "elapsed_ms": elapsed_ms,
             })
         except Exception as e:
             logger.error(f"[PageAPI] API 测试失败: {e}")

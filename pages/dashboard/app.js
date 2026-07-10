@@ -428,7 +428,7 @@ function renderTest() {
     </div>
     <div class="test-response">
       <div class="response-header">
-        <span class="status">状态码：<b id="respStatus">-</b></span>
+        <span class="status">状态码：<b id="respStatus">-</b><span class="elapsed" id="respElapsed"></span></span>
         <div class="response-tools">
           <input type="text" id="findInput" placeholder="Find..." />
           <button class="btn btn-sm btn-primary" id="findPrevBtn" title="上一个">▲</button>
@@ -567,9 +567,12 @@ function attachTestEvents() {
     try {
       $("runTestBtn").disabled = true;
       $("respStatus").textContent = "-";
+      $("respElapsed").textContent = "";
       $("respBody").textContent = "发送请求中...";
       const res = await bridge.apiPost("config/test", { config });
       $("respStatus").textContent = res.http_code ?? "-";
+      const elapsed = res.elapsed_ms;
+      $("respElapsed").textContent = elapsed != null ? ` | ${elapsed}ms` : "";
       const pre = $("respBody");
       const placeholder = document.querySelector(".preview-placeholder");
       const img = $("previewImg");

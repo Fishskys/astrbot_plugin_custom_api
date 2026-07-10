@@ -212,7 +212,9 @@ class CustomAPIManager(Star):
         # 记录调用统计
         user_id = event.get_sender_id()
         api_config_for_stats = selected_api.get("config", {})
-        api_name = f"{api_config_for_stats.get('api_name', '')}_{selected_api.get('type', '')}"
+        api_name = (
+            f"{api_config_for_stats.get('api_name', '')}_{selected_api.get('type', '')}"
+        )
         self.stats_tracker.record(api_name, user_id)
         # 参数处理
         err_msg, api_config = params_handle(
