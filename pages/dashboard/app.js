@@ -12,6 +12,20 @@ const TYPE = [
 const TRIGGER = { global: "全局", direct: "直接", mention_only: "仅@" };
 const RANGE_LABELS = { today: "今日", month: "本月", total: "总计" };
 
+// 类型专属字段配置 — 后续新增字段只需在这里加一行，form 自动渲染/收集/重置
+const TYPE_FIELDS = {
+  text_type: [
+    { id: "max_length", label: "文本最大展示长度（0=不限）", type: "number", default: 500, min: 0, max: 99999 },
+  ],
+  img_type: [
+    { id: "max_size", label: "图片最大大小（MB，0=不限）", type: "number", default: 0, min: 0, max: 9999 },
+  ],
+  audio_type: [],
+  video_type: [
+    { id: "max_size", label: "视频最大大小（MB，0=不限）", type: "number", default: 300, min: 0, max: 9999 },
+  ],
+};
+
 let allApis = [];
 let globalConfig = {};
 let currentView = "overview";
@@ -875,6 +889,7 @@ function openAdd(typeKey) {
   $("editModalTitle").textContent = `新增 ${TYPE.find(t => t.key === typeKey)?.label || "API"}`;
   $("submitEditBtn").textContent = "创建";
   resetForm();
+  renderTypeFields(typeKey, {});
   openModal("editModal");
 }
 function openEdit(idx) {
@@ -893,6 +908,7 @@ function openEdit(idx) {
   $("editParams").value = api.params && Object.keys(api.params).length ? JSON.stringify(api.params, null, 2) : "";
   $("editHeaders").value = api.headers && Object.keys(api.headers).length ? JSON.stringify(api.headers, null, 2) : "";
   $("editBody").value = api.body && Object.keys(api.body).length ? JSON.stringify(api.body, null, 2) : "";
+  renderTypeFields(api.__template_key || "text_type", api);
   openModal("editModal");
 }
 function resetForm() {
@@ -906,6 +922,38 @@ function resetForm() {
   $("editParams").value = "";
   $("editHeaders").value = "";
   $("editBody").value = "";
+  resetTypeFields();
+}
+
+// ── 类型专属字段渲染 / 收集 / 重置 ──
+function renderTypeFields(typeKey, config) {
+  const fields = TYPE_FIELDS[typeKey] || [];
+  const container = $("editTypeFields");
+  container.innerHTML = fields.map(f => {
+    const val = config[f.id] ?? f.default;
+    const attrs = `id="tf_${f.id}" value="${esc(String(val))}"${f.min != null ? ` min="${f.min}"` : ""}${f.max != null ? ` max="${f.max}"` : ""}`;
+    return `<div class="form-group"><label>${f.label}</label><input type="${f.type}" ${attrs} /></div>`;
+  }).join("");
+  container.style.display = fields.length ? "" : "none";
+}
+
+function collectTypeFields() {
+  const fields = TYPE_FIELDS[$("editType").value] || [];
+  const result = {};
+  fields.forEach(f => {
+    const el = document.getElementById(`tf_${f.id}`);
+    if (!el) return;
+    result[f.id] = f.type === "number" ? (parseInt(el.value) || 0) : el.value;
+  });
+  return result;
+}
+
+function resetTypeFields() {
+  const fields = TYPE_FIELDS[$("editType").value] || [];
+  fields.forEach(f => {
+    const el = document.getElementById(`tf_${f.id}`);
+    if (el) el.value = f.default;
+  });
 }
 
 $("editForm").addEventListener("submit", async (e) => {
@@ -922,6 +970,7 @@ $("editForm").addEventListener("submit", async (e) => {
     api_rate_limit: parseInt($("editRateLimit").value) || 0,
     trigger_type: $("editTriggerType").value,
     data_path: $("editDataPath").value.trim(),
+    ...collectTypeFields(),
   };
   for (const f of ["params", "headers", "body"]) {
     const raw = $(`edit${f.charAt(0).toUpperCase() + f.slice(1)}`).value.trim();
