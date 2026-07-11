@@ -28,7 +28,7 @@ from .core.stats_tracker import StatsTracker
     "astrbot_plugin_custom_api",
     "Fishskys",
     "支持多样化的外部API调用，可处理文本、图片、语音和视频类型API，支持自定义参数配置，关键词触发调用",
-    "0.3.1",
+    "1.0.0",
 )
 class CustomAPIManager(Star):
     def __init__(self, context: Context, config: Dict[str, Any]):

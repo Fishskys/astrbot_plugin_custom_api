@@ -3,25 +3,40 @@
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge)](LICENSE)
 [![AstrBot](https://img.shields.io/badge/AstrBot-Plugin-ff69b4?style=for-the-badge)](https://github.com/AstrBotDevs/AstrBot)
 
-
 支持多样化的外部API接口调用，可处理文本、图片、语音和视频类型API，支持自定义参数配置，关键词触发调用
+
+## ❓ 能做什么
+
+这是一个通用的API接入插件，不管是文字、图片、语音、还是视频类型的API，都可以通过这个插件接入Astrbot，接入后可以通过自定义命令快捷触发API
 
 
 ## 🌟 功能特性
 - ✅ **多类型响应支持**
-自动识别文本、图片、音频、视频，JSON 响应自动提取媒体 URL
-- ✅ **动态多参数配置**
-支持 URL嵌入参数和params，请求头 / 请求体均可替换
-- ✅ **双重触发模式**
-全局 + 单 API 配置：直接触发 / 仅 @机器人触发
-- ✅ **频率限制**
-支持用户级 / API 级调用频率限制，防止滥用
-- ✅ **随机 API 负载**
+  支持文本、图片、音频、视频，自动转换输出
 
+- ✅ **动态多参数配置**
+  支持常见的API请求参数配置，请求头、请求体均可自定义配置
+
+- ✅ **双重触发模式**
+  支持关键词触发 / 仅 @机器人触发两种方式，且可不同API单独配置
+
+- ✅ **频率限制**
+  支持用户级 / API 级调用频率限制，防止滥用
+
+- ✅ **随机 API 负载**
+  同一个API指令支持配置多个API URL，均衡负载
+  
+- ✅ **UI界面配置**
+
+  适配Astrbot官方UI接口，可以一览配置与调用详情
+
+- ✅ **API在线调用测试**
+
+  UI界面可以快速测试API可用性
 
 ## 🚀 快速使用
-### 方式1：通过AstrBot插件市场安装（推荐）
-在插件市场搜索astrbot-plugin-custom-api并安装
+### ~~方式1：通过AstrBot插件市场安装（推荐）~~ 当前插件暂未被收录（已提交issue）
+~~在插件市场搜索astrbot-plugin-custom-api并安装~~
 
 ### 方式2：手动安装
 下载本项目压缩包astrbot_plugin_custom_api.zip，在webui上传即可
@@ -78,9 +93,9 @@
 > [!NOTE]
 >当提取的元素是图片地址，且当前API配置为图片类型，则插件会直接发送图片，而不是图片地址，如果需要发送图片地址，请设置文本类型API。
 
-| 配置项          | 类型 | 默认值 | 说明       |
-| --------------- | ---- | ------ | ---------- |
-| API请求参数列表 | dict | 空     | 键值对参数 |
+| 配置项                 | 类型 | 默认值 | 说明       |
+| ---------------------- | ---- | ------ | ---------- |
+| API请求参数列表/params | dict | 空     | 键值对参数 |
 
 > [!TIP]
 >当你需要配置带参数的API时，可以在api_url中配置占位符或者在params中设置**空值**的键值对，但**不要同时配置**。
@@ -94,9 +109,18 @@
 ```
 此时发送“/搜索 北京 天气”，插件会自动将key1和key2的值分别设置为北京、天气。
 
+## 插件截图
+
+![ui-1](https://github.com/user-attachments/assets/d8a00b8b-44c8-47a2-bb34-0f166e368ab7)
+
+![ui-2](https://github.com/user-attachments/assets/0efbae7c-8a1a-4d8c-892a-b5726abbe076")
+
+![ui-3](https://github.com/user-attachments/assets/c0586622-23f5-4bd4-9df5-c0afcea532ac)
+
 
 ## Todo List
-- [ ]定时触发
+- [ ]定时任务
+- [ ]访问控制
 
 
 ## 📄 许可证
