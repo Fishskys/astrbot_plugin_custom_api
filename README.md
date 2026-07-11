@@ -113,7 +113,7 @@
 
 ![ui-1](https://github.com/user-attachments/assets/d8a00b8b-44c8-47a2-bb34-0f166e368ab7)
 
-![ui-2](https://github.com/user-attachments/assets/0efbae7c-8a1a-4d8c-892a-b5726abbe076")
+![ui-2](https://github.com/user-attachments/assets/0efbae7c-8a1a-4d8c-892a-b5726abbe076)
 
 ![ui-3](https://github.com/user-attachments/assets/c0586622-23f5-4bd4-9df5-c0afcea532ac)
 
