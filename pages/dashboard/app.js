@@ -540,7 +540,7 @@ function collectTestConfig() {
     headers: collectKVData("testHeaders"),
     body: body,
   };
-  // 编辑时保留原配置中的类型专属字段（如 auto_preview、max_size 等）
+  // 编辑时保留原配置中的类型专属字段（如 max_size 等）
   return testState.config ? { ...testState.config, ...baseConfig } : baseConfig;
 }
 

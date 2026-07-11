@@ -93,8 +93,10 @@ async def process_text_response(
             return
 
         if text_list:
+            max_length = api_config.get("max_length", 500)
             for text in text_list:
-                # if isinstance(text, str):
+                if max_length > 0 and len(text) > max_length:
+                    text = text[:max_length] + "...\n(文本过长已截断)"
                 yield event.plain_result(text.strip())
             return
         else:

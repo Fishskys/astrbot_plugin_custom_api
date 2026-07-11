@@ -114,17 +114,11 @@
             "hint": "如果返回值是json，且你仅需要提取某一部分，可以在此配置，采用dpath格式，分割符为\".\",支持多级嵌套，例如“key1.key2”,不需要请留空",
             "default": ""
           },
-          "auto_fold": {
-            "description": "是否自动折叠长文本",
-            "type": "bool",
-            "hint": "true：超过500字自动折叠，需指令展开；false：全部展示",
-            "default": true
-          },
           "max_length": {
             "description": "文本最大展示长度",
             "type": "int",
             "hint": "超过此长度的文本会被截断，0表示不限制",
-            "default": 2000
+            "default": 500
           }
         }
       },
@@ -205,12 +199,6 @@
             "type": "string",
             "hint": "如果返回值是json，且你仅需要提取某一部分，可以在此配置，采用dpath格式，分割符为\".\",支持多级嵌套，例如“key1.key2”,不需要请留空",
             "default": ""
-          },
-          "auto_preview": {
-            "description": "是否自动预览图片",
-            "type": "bool",
-            "hint": "true：直接发送图片；false：发送图片URL",
-            "default": true
           },
           "max_size": {
             "description": "图片最大允许大小（MB）",
@@ -297,18 +285,6 @@
             "type": "string",
             "hint": "如果返回值是json，且你仅需要提取某一部分，可以在此配置，采用dpath格式，分割符为\".\",支持多级嵌套，例如“key1.key2”,不需要请留空",
             "default": ""
-          },
-          "auto_play": {
-            "description": "是否自动尝试播放语音",
-            "type": "bool",
-            "hint": "true：适配平台自动播放；false：仅返回音频URL",
-            "default": true
-          },
-          "format": {
-            "description": "支持的音频格式",
-            "type": "string",
-            "hint": "逗号分隔，如mp3,wav,amr",
-            "default": "mp3,wav"
           }
         }
       },
@@ -389,12 +365,6 @@
             "type": "string",
             "hint": "如果返回值是json，且你仅需要提取某一部分，可以在此配置，采用dpath格式，分割符为\".\",支持多级嵌套，例如“key1.key2”,不需要请留空",
             "default": ""
-          },
-          "auto_play": {
-            "description": "是否自动预览视频",
-            "type": "bool",
-            "hint": "true：直接发送视频；false：发送视频URL",
-            "default": true
           },
           "max_size": {
             "description": "视频最大允许大小（MB）",

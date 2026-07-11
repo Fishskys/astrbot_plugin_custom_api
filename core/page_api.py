@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import json
 import time
@@ -276,6 +277,8 @@ class PageAPI:
             if not file_field:
                 return error_response("未上传文件", status_code=400)
             content = file_field.read()
+            if asyncio.iscoroutine(content):
+                content = await content
             if isinstance(content, bytes):
                 content = content.decode("utf-8")
             imported = json.loads(content)
