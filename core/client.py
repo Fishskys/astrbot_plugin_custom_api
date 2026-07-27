@@ -6,7 +6,6 @@ from astrbot.api import logger
 
 from .response_handle import detect_media_type
 
-
 # 可重试的异常类型
 _RETRYABLE_EXCEPTIONS = (
     asyncio.TimeoutError,
@@ -92,9 +91,10 @@ async def call_api(
     params = api_config.get("params", {})
     headers = api_config.get("headers", {})
     body = api_config.get("body", {})
-    timeout_sec = api_config.get("timeout", global_timeout)
-    if timeout_sec < 0:
-        timeout_sec = 30
+    # 配置为0时继承全局
+    timeout_sec = api_config.get("timeout") or global_timeout
+    if not isinstance(timeout_sec, (int, float)) or timeout_sec <= 0:
+        timeout_sec = 20
 
     total_attempts = max(0, retry_count) + 1
     last_error: str = ""

@@ -9,7 +9,7 @@
     "description": "全局默认API请求超时时间（秒）",
     "type": "int",
     "hint": "单个API未配置超时时间时，使用此全局值，建议10-30秒",
-    "default": 15
+    "default": 20
   },
   "global_retry_count": {
     "description": "请求失败时的重试次数",

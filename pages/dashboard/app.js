@@ -422,8 +422,8 @@ function renderTest() {
     <div class="test-main">
     <div class="test-form">
       <div class="form-row">
-        <div class="form-group"><label>超时（秒，0=全局）</label><input type="number" id="testTimeout" value="${cfg.timeout || 0}" min="0" max="120" /></div>
-        <div class="form-group"><label>频率限制（次/分钟，0=全局）</label><input type="number" id="testRateLimit" value="${cfg.api_rate_limit || 0}" min="0" max="999" /></div>
+        <div class="form-group"><label>超时（秒，0=全局）</label><input type="number" id="testTimeout" value="${esc(String(cfg.timeout || 0))}" min="0" max="120" /></div>
+        <div class="form-group"><label>频率限制（次/分钟，0=全局）</label><input type="number" id="testRateLimit" value="${esc(String(cfg.api_rate_limit || 0))}" min="0" max="999" /></div>
       </div>
       <div class="form-row">
         <div class="form-group"><label>触发方式</label><select id="testTriggerType">
@@ -791,9 +791,9 @@ function renderConfig() {
   let html = `<div class="section"><div class="section-header"><div class="section-title">全局配置</div><button class="btn btn-primary" id="saveGlobalBtn">保存全局配置</button></div>
     <div class="global-form">
       <div class="form-row">
-        <div class="form-group"><label>全局超时时间（秒）</label><input type="number" id="globalTimeout" value="${globalConfig.global_default_timeout || 15}" min="1" max="120"/></div>
-        <div class="form-group"><label>全局频率限制（次/分钟，0=不限）</label><input type="number" id="globalRateLimit" value="${globalConfig.global_rate_limit || 0}" min="0" max="9999"/></div>
-        <div class="form-group"><label>请求失败重试次数（0=不重试）</label><input type="number" id="globalRetryCount" value="${globalConfig.global_retry_count || 0}" min="0" max="10"/></div>
+        <div class="form-group"><label>全局超时时间（秒）</label><input type="number" id="globalTimeout" value="${esc(String(globalConfig.global_default_timeout || 15))}" min="1" max="120"/></div>
+        <div class="form-group"><label>全局频率限制（次/分钟，0=不限）</label><input type="number" id="globalRateLimit" value="${esc(String(globalConfig.global_rate_limit || 0))}" min="0" max="9999"/></div>
+        <div class="form-group"><label>请求失败重试次数（0=不重试）</label><input type="number" id="globalRetryCount" value="${esc(String(globalConfig.global_retry_count || 0))}" min="0" max="10"/></div>
       </div>
       <div class="form-row">
         <div class="form-group"><label>默认触发方式</label><select id="defaultTriggerType"><option value="direct" ${globalConfig.default_trigger_type==='direct'?'selected':''}>直接对话触发</option><option value="mention_only" ${globalConfig.default_trigger_type==='mention_only'?'selected':''}>仅@机器人触发</option></select></div>
@@ -817,9 +817,9 @@ function renderConfig() {
         if ((api.__template_key || "text_type") !== t.key) continue;
         const urls = Array.isArray(api.api_url) ? api.api_url : [api.api_url].filter(Boolean);
         html += `<div class="api-card" data-idx="${i}">
-          <div class="cmd">/${api.api_name || '-'}</div>
+          <div class="cmd">/${esc(api.api_name || '-')}</div>
           <div class="meta-row"><span class="badge ${t.badge}">${t.label}</span><span class="meta-item"><span class="label">触发方式</span><span class="val">${TRIGGER[api.trigger_type] || "全局"}</span></span></div>
-          <div class="meta-row"><span class="meta-item"><span class="label">请求</span><span class="val">${api.method || 'GET'}</span></span><span class="meta-item"><span class="label">超时</span><span class="val">${api.timeout ? api.timeout + 's' : '默认'}</span></span><span class="meta-item"><span class="label">频率</span><span class="val">${api.api_rate_limit ? api.api_rate_limit + '/min' : '全局'}</span></span></div>
+          <div class="meta-row"><span class="meta-item"><span class="label">请求</span><span class="val">${esc(api.method || 'GET')}</span></span><span class="meta-item"><span class="label">超时</span><span class="val">${api.timeout ? api.timeout + 's' : '默认'}</span></span><span class="meta-item"><span class="label">频率</span><span class="val">${api.api_rate_limit ? api.api_rate_limit + '/min' : '全局'}</span></span></div>
           <div class="url-list">${urls.map(u => `<span class="url-tag" title="${esc(u)}">${esc(u)}</span>`).join('') || '<span style="font-size:0.75rem;color:var(--text-secondary)">未配置URL</span>'}</div>
           <div class="card-actions">
             <button class="btn btn-sm btn-muted edit-btn" data-idx="${i}">编辑</button>
@@ -1005,16 +1005,16 @@ async function deleteApi(idx) {
 function showDetail(idx) {
   const api = allApis[idx];
   const t = TYPE.find(t => t.key === (api.__template_key || "text_type"));
-  const urls = Array.isArray(api.api_url) ? api.api_url.map(u => `<code>${esc(u)}</code>`).join("<br>") : (api.api_url || "-");
+  const urls = Array.isArray(api.api_url) ? api.api_url.map(u => `<code>${esc(u)}</code>`).join("<br>") : esc(api.api_url || "-");
   const detailHtml = `
     <dl class="detail-grid">
       <dt>类型</dt><dd><span class="badge ${t?.badge || ""}">${t?.label || "-"}</span></dd>
-      <dt>触发命令</dt><dd><strong>/${api.api_name || '-'}</strong></dd>
-      <dt>请求方式</dt><dd>${api.method || "GET"}</dd>
+      <dt>触发命令</dt><dd><strong>/${esc(api.api_name || '-')}</strong></dd>
+      <dt>请求方式</dt><dd>${esc(api.method || "GET")}</dd>
       <dt>触发方式</dt><dd>${TRIGGER[api.trigger_type] || "全局"}</dd>
       <dt>超时</dt><dd>${api.timeout ? api.timeout + 's' : '默认'}</dd>
       <dt>频率限制</dt><dd>${api.api_rate_limit ? api.api_rate_limit + '/min' : '继承全局'}</dd>
-      <dt>数据路径</dt><dd><code>${api.data_path || "(无)"}</code></dd>
+      <dt>数据路径</dt><dd><code>${esc(api.data_path || "(无)")}</code></dd>
       <dt>请求参数</dt><dd>${formatJson(api.params)}</dd>
       <dt>请求头</dt><dd>${formatJson(api.headers)}</dd>
       <dt>请求体</dt><dd>${formatJson(api.body)}</dd>
