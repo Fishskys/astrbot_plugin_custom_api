@@ -35,8 +35,8 @@
   UI界面可以快速测试API可用性
 
 ## 🚀 快速使用
-### ~~方式1：通过AstrBot插件市场安装（推荐）~~ 当前插件暂未被收录（已提交issue）
-~~在插件市场搜索astrbot-plugin-custom-api并安装~~
+### 方式1：通过AstrBot插件市场安装（推荐）
+在插件市场搜索astrbot-plugin-custom-api并安装
 
 ### 方式2：手动安装
 下载本项目压缩包astrbot_plugin_custom_api.zip，在webui上传即可
