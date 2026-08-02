@@ -898,7 +898,7 @@ function openEdit(idx) {
   const api = allApis[idx];
   $("editIndex").value = idx;
   $("editType").value = api.__template_key || "text_type";
-  $("editModalTitle").textContent = `编辑 /${api.api_name || ""}`;
+  $("editModalTitle").textContent = `编辑 /${esc(api.api_name || "")}`;
   $("submitEditBtn").textContent = "更新";
   $("editApiName").value = api.api_name || "";
   $("editMethod").value = api.method || "GET";

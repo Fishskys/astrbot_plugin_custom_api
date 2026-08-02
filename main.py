@@ -3,6 +3,7 @@ from collections import defaultdict
 from typing import Dict, List, Any, Optional, Tuple
 import os
 import aiohttp
+import astrbot.api.message_components as Comp
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
@@ -22,6 +23,23 @@ from .core.client import call_api
 from .core.params import params_handle
 from .core.page_api import PageAPI
 from .core.stats_tracker import StatsTracker
+
+
+def extract_reply_content(event: AstrMessageEvent) -> Optional[str]:
+    """从消息事件中被引用的消息里提取文本内容。
+
+    遍历消息链找到 Reply 组件，返回其 message_str（纯文本）。
+    如果没有引用消息则返回 None。
+    """
+    try:
+        chain = event.get_messages()
+    except Exception:
+        return None
+
+    for seg in chain:
+        if isinstance(seg, Comp.Reply):
+            return seg.message_str
+    return None
 
 
 @register(
@@ -209,6 +227,12 @@ class CustomAPIManager(Star):
             yield event.plain_result("⚠️ 调用过于频繁，请稍后再试")
             event.stop_event()
             return
+
+        # 提取引用消息内容，如果有引用则插入到参数列表首位
+        reply_content = extract_reply_content(event)
+        if reply_content is not None:
+            parts = [parts[0]] + [reply_content] + parts[1:]
+
         # 记录调用统计
         user_id = event.get_sender_id()
         api_config_for_stats = selected_api.get("config", {})
