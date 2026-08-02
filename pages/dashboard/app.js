@@ -15,14 +15,16 @@ const RANGE_LABELS = { today: "今日", month: "本月", total: "总计" };
 // 类型专属字段配置 — 后续新增字段只需在这里加一行，form 自动渲染/收集/重置
 const TYPE_FIELDS = {
   text_type: [
-    { id: "max_length", label: "文本最大展示长度（0=不限）", type: "number", default: 500, min: 0, max: 99999 },
+    { id: "max_length", label: "文本最大展示长度（0=不限）", type: "number", default: 0, min: 0, max: 99999 },
   ],
   img_type: [
     { id: "max_size", label: "图片最大大小（MB，0=不限）", type: "number", default: 0, min: 0, max: 9999 },
   ],
-  audio_type: [],
+  audio_type: [
+    { id: "max_size", label: "语音最大大小（MB，0=不限）", type: "number", default: 0, min: 0, max: 9999 },
+  ],
   video_type: [
-    { id: "max_size", label: "视频最大大小（MB，0=不限）", type: "number", default: 300, min: 0, max: 9999 },
+    { id: "max_size", label: "视频最大大小（MB，0=不限）", type: "number", default: 0, min: 0, max: 9999 },
   ],
 };
 

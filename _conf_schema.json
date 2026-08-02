@@ -118,7 +118,7 @@
             "description": "文本最大展示长度",
             "type": "int",
             "hint": "超过此长度的文本会被截断，0表示不限制",
-            "default": 500
+            "default": 0
           }
         }
       },
@@ -285,6 +285,12 @@
             "type": "string",
             "hint": "如果返回值是json，且你仅需要提取某一部分，可以在此配置，采用dpath格式，分割符为\".\",支持多级嵌套，例如“key1.key2”,不需要请留空",
             "default": ""
+          },
+          "max_size": {
+            "description": "语音最大允许大小（MB）",
+            "type": "int",
+            "hint": "超过此大小的语音仅返回URL，0表示不限制",
+            "default": 0
           }
         }
       },
@@ -370,7 +376,7 @@
             "description": "视频最大允许大小（MB）",
             "type": "int",
             "hint": "超过此大小的视频仅返回URL，0表示不限制",
-            "default": 300
+            "default": 0
           }
         }
       }

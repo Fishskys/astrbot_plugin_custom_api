@@ -13,6 +13,31 @@ _RETRYABLE_EXCEPTIONS = (
     aiohttp.ServerTimeoutError,
 )
 
+# 二进制响应的硬性安全上限（MB）。
+# 即使配置 max_size=0（不限）也套用该上限，防止异常/恶意响应耗尽内存。
+_HARD_MAX_SIZE_MB = 500
+
+# 流式读取响应体时的分块大小
+_CHUNK_SIZE = 64 * 1024
+
+
+async def _read_body_limited(
+    response: aiohttp.ClientResponse, limit_bytes: int
+) -> Tuple[Any, int]:
+    """流式读取响应体，累计超过 limit_bytes 立即中止。
+
+    返回: (完整字节, 已接收字节数)；超限时返回 (None, 已接收字节数)。
+    不依赖 Content-Length，对 chunked/缺失头部的响应同样有效。
+    """
+    chunks = []
+    received = 0
+    async for chunk in response.content.iter_chunked(_CHUNK_SIZE):
+        received += len(chunk)
+        if received > limit_bytes:
+            return None, received
+        chunks.append(chunk)
+    return b"".join(chunks), received
+
 
 async def _do_request(
     session: aiohttp.ClientSession,
@@ -45,16 +70,35 @@ async def _do_request(
                     response_data = await response.text()
                     logger.info(f"文本格式响应: {response_data}")
             else:
+                # 解析大小限制：优先单 API 配置的 max_size，0 时套用硬性安全上限
+                max_size = api_config.get("max_size", 0)
+                if not isinstance(max_size, (int, float)) or max_size < 0:
+                    max_size = 0
+                limit_mb = max_size if max_size > 0 else _HARD_MAX_SIZE_MB
+                limit_bytes = int(limit_mb * 1024 * 1024)
+
+                # 快速路径：有 Content-Length 且已超限，不下载直接拒收
                 content_length = response.headers.get("Content-Length")
                 if content_length:
-                    max_size = api_config.get("max_size", 0)
-                    if max_size > 0 and int(content_length) > max_size * 1024 * 1024:
-                        logger.warning(
-                            f"⚠️ 响应大小 {content_length} Bytes 超过限制 {max_size} MB"
-                        )
-                        return None, content_type, media_type, response.status
-                response_data = await response.read()
-                logger.info("二进制响应")
+                    try:
+                        if int(content_length) > limit_bytes:
+                            logger.warning(
+                                f"⚠️ 响应大小 {content_length} Bytes 超过限制 {limit_mb} MB"
+                            )
+                            return None, content_type, media_type, response.status
+                    except ValueError:
+                        pass  # 非法 Content-Length 头，交由流式读取兜底
+
+                # 流式读取：无 Content-Length（chunked）时也能在超限瞬间中止
+                response_data, received = await _read_body_limited(
+                    response, limit_bytes
+                )
+                if response_data is None:
+                    logger.warning(
+                        f"⚠️ 响应超过 {limit_mb} MB 限制，已接收 {received} Bytes，中止下载"
+                    )
+                    return None, content_type, media_type, response.status
+                logger.info(f"二进制响应，大小 {received} Bytes")
         else:
             logger.error(f"❌ API 请求失败，状态码: {response.status}")
             response_data = None
